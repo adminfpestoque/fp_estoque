@@ -1,0 +1,12 @@
+import { React, useEffect, useMemo, useState, api, unwrap, fmtMoney, fmtQty, fmtDate, today, getError, Logo, Button, Modal, Toast, Field, EmptyState, Pagination, DataTable, StatusBadge, AlertTriangle, Archive, ArrowDownToLine, ArrowUpFromLine, BarChart3, Bell, Boxes, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Eye, EyeOff, FileDown, FileText, Gauge, History, Layers3, LogOut, Menu, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Trash2, Truck, UserCog, Users, Warehouse, X, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "../shared.jsx";
+import { PageHeader } from "../layout.jsx";
+import { SearchBar, useList } from "./listing.jsx";
+export function LotsPage() {
+  const [mode, setMode] = useState("all");
+  const list = useList(mode === "expired" ? "lots/expired/" : mode === "expiring" ? "lots/expiring/" : "lots/", { ordering: "expiration_date" });
+  return <><PageHeader title="Lotes e validade" description="Quantidades disponíveis por lote com alertas de vencimento e regra FEFO." />
+    <div className="filters-bar"><SearchBar value={list.params.search || ""} onChange={(search) => list.setParams({ ...list.params, search, page: 1 })} /><select value={mode} onChange={(e) => setMode(e.target.value)}><option value="all">Todos</option><option value="expiring">Próximos do vencimento</option><option value="expired">Vencidos</option></select></div>
+    <section className="panel"><DataTable loading={list.loading} rows={list.rows} columns={[
+      { key: "product_name", label: "Produto", render: (r) => <span><strong>{r.product_name}</strong><small className="block">{r.product_code}</small></span> }, { key: "number", label: "Lote" }, { key: "supplier_name", label: "Fornecedor" }, { key: "quantity", label: "Disponível", render: (r) => fmtQty(r.quantity) }, { key: "manufacturing_date", label: "Fabricação", render: (r) => fmtDate(r.manufacturing_date, false) }, { key: "expiration_date", label: "Validade", render: (r) => fmtDate(r.expiration_date, false) }, { key: "cost_price", label: "Custo", render: (r) => fmtMoney(r.cost_price) }, { key: "status", label: "Situação", render: (r) => <StatusBadge value={r.status} label={r.status === "EXPIRED" ? "Vencido" : r.status === "EMPTY" ? "Esgotado" : "Disponível"} /> },
+    ]} /><Pagination page={list.params.page} count={list.count} onChange={(page) => list.setParams({ ...list.params, page })} /></section></>;
+}
