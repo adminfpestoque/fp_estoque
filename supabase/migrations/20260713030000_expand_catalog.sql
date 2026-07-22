@@ -1,0 +1,51 @@
+BEGIN;
+ALTER TABLE inventory_category ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS corporate_name varchar(180) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS state_registration varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS contact_name varchar(120) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS whatsapp varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS cep varchar(10) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS address varchar(180) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS address_number varchar(20) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS district varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS city varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS state varchar(2) NOT NULL DEFAULT '';
+ALTER TABLE inventory_supplier ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS inv_supplier_name_idx ON inventory_supplier(name);
+
+ALTER TABLE inventory_product ADD COLUMN IF NOT EXISTS sku varchar(80) NULL;
+ALTER TABLE inventory_product ADD COLUMN IF NOT EXISTS package_type varchar(60) NOT NULL DEFAULT '';
+ALTER TABLE inventory_product ADD COLUMN IF NOT EXISTS package_quantity numeric(12,3) NOT NULL DEFAULT 1;
+ALTER TABLE inventory_product ADD COLUMN IF NOT EXISTS maximum_stock numeric(14,3) NOT NULL DEFAULT 0;
+ALTER TABLE inventory_product ADD COLUMN IF NOT EXISTS image_url varchar(200) NOT NULL DEFAULT '';
+ALTER TABLE inventory_product ALTER COLUMN stock TYPE numeric(14,3);
+ALTER TABLE inventory_product ALTER COLUMN minimum_stock TYPE numeric(14,3);
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_product_sku_uniq ON inventory_product(sku) WHERE sku IS NOT NULL;
+CREATE INDEX IF NOT EXISTS inv_product_code_idx ON inventory_product(code);
+CREATE INDEX IF NOT EXISTS inv_product_barcode_idx ON inventory_product(barcode);
+ALTER TABLE inventory_product DROP CONSTRAINT IF EXISTS inventory_product_nonnegative_values;
+ALTER TABLE inventory_product ADD CONSTRAINT inventory_product_nonnegative_values CHECK (cost_price >= 0 AND sale_price >= 0 AND stock >= 0 AND minimum_stock >= 0 AND maximum_stock >= 0 AND package_quantity > 0);
+
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS received_quantity numeric(14,3) NOT NULL DEFAULT 0;
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS manufacturing_date date NULL;
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS entry_date date NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS cost_price numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+ALTER TABLE inventory_lot ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
+ALTER TABLE inventory_lot ALTER COLUMN quantity TYPE numeric(14,3);
+UPDATE inventory_lot SET received_quantity = quantity WHERE received_quantity = 0 AND quantity > 0;
+ALTER TABLE inventory_lot DROP CONSTRAINT IF EXISTS inventory_lot_quantity_nonnegative;
+ALTER TABLE inventory_lot ADD CONSTRAINT inventory_lot_values_nonnegative CHECK (quantity >= 0 AND received_quantity >= 0 AND cost_price >= 0);
+CREATE INDEX IF NOT EXISTS inv_lot_prod_qty_idx ON inventory_lot(product_id, quantity);
+
+ALTER TABLE inventory_movement ALTER COLUMN type TYPE varchar(16);
+UPDATE inventory_movement SET type = CASE type WHEN 'IN' THEN 'ENTRY' WHEN 'OUT' THEN 'OUTPUT' WHEN 'ADJ+' THEN 'ADJ_IN' WHEN 'ADJ-' THEN 'ADJ_OUT' WHEN 'REV' THEN 'REV_IN' ELSE type END;
+ALTER TABLE inventory_movement ALTER COLUMN quantity TYPE numeric(14,3);
+ALTER TABLE inventory_movement ALTER COLUMN previous_stock TYPE numeric(14,3);
+ALTER TABLE inventory_movement ALTER COLUMN final_stock TYPE numeric(14,3);
+ALTER TABLE inventory_movement ADD COLUMN IF NOT EXISTS document varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE inventory_movement ADD COLUMN IF NOT EXISTS reversal_of_id bigint NULL REFERENCES inventory_movement(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE inventory_movement DROP CONSTRAINT IF EXISTS inventory_movement_type_valid;
+CREATE INDEX IF NOT EXISTS inv_mov_prod_date_idx ON inventory_movement(product_id, created_at);
+COMMIT;
