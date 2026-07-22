@@ -126,6 +126,7 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOWED_ORIGIN_REGEXES = []
 if DEBUG and ALLOW_LAN_DEV:
     CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.vercel\.app$",
         r"^http://localhost:\d+$",
         r"^http://127\.0\.0\.1:\d+$",
         r"^http://192\.168\.\d{1,3}\.\d{1,3}:\d+$",
