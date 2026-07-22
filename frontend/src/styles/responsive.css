@@ -1,0 +1,74 @@
+@media (max-width: 1400px) {
+  .metrics-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .summary-cards { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .form-grid.cols-4 { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .dashboard-filter-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .dashboard-filter-grid-stock { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 1050px) {
+  .shell, .sidebar-collapsed { grid-template-columns: 1fr; }
+  .sidebar, .sidebar-collapsed .sidebar { width: 248px; transform: translateX(-100%); }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .content { grid-column: 1; }
+  .mobile-menu { display: grid; }
+  .sidebar-collapse { display: none; }
+  .mobile-overlay { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 25; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .form-grid.cols-3, .form-grid.cols-4 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .item-row { grid-template-columns: minmax(220px,2fr) repeat(3,minmax(130px,1fr)) 40px; }
+  .login-page { grid-template-columns: minmax(250px, 340px) minmax(340px, 420px); gap: 28px; padding: 26px; }
+  .login-showcase img { width: min(100%, 330px); max-height: 56vh; }
+}
+@media (max-width: 760px) {
+  .page-container { padding: 15px; }
+  .topbar { padding: 0 14px; }
+  .topbar-title small, .user-chip span { display: none; }
+  .page-header { flex-direction: column; }
+  .page-actions { width: 100%; justify-content: flex-start; }
+  .page-actions .btn { flex: 1; }
+  .metrics-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .metric-card { min-height: 90px; padding: 12px; }
+  .metric-card strong { font-size: 18px; }
+  .form-grid.cols-2, .form-grid.cols-3, .form-grid.cols-4 { grid-template-columns: 1fr; }
+  .filters-bar > *, .search-box { min-width: 100% !important; width: 100%; }
+  .modal-backdrop { padding: 0; align-items: end; }
+  .modal, .modal-lg, .modal-xl { width: 100%; max-height: 94vh; border-radius: 18px 18px 0 0; }
+  .summary-cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .dashboard-view-switch { grid-template-columns: 1fr; gap: 10px; }
+  .dashboard-view-option { padding: 14px; }
+  .dashboard-filter-heading { flex-direction: column; }
+  .dashboard-filter-heading .btn { width: 100%; }
+  .dashboard-filter-grid, .dashboard-filter-grid-stock { grid-template-columns: 1fr; }
+  .dashboard-scope { align-items: flex-start; }
+  .dashboard-scope small { width: 100%; margin-left: 0; }
+  .dashboard-help { padding: 14px; }
+  .dashboard-panel-title { flex-direction: column; }
+  .dashboard-panel-title > small { margin-left: 0; }
+  .login-page { display: grid; grid-template-columns: 1fr; place-items: center; padding: 20px 16px; overflow-y: auto; }
+  .login-showcase { display: none; }
+  .login-card { padding: 24px 20px; width: min(430px, 100%); }
+  .login-card .brand { display: flex; justify-content: center; text-align: left; margin-bottom: 2px; }
+  .login-heading { margin-top: 0; text-align: center; }
+  .login-heading h1 { font-size: 26px; }
+  .item-row { grid-template-columns: 1fr; }
+  .item-row .icon-btn { justify-self: end; }
+}
+@media (max-width: 460px) {
+  .metrics-grid, .summary-cards { grid-template-columns: 1fr; }
+  .user-chip > div { width: 34px; height: 34px; }
+  .dashboard-filter-panel { padding: 16px; }
+  .dashboard-section-heading h3 { font-size: 18px; }
+  .dashboard-view-option { align-items: flex-start; }
+  .dashboard-view-icon { width: 42px; height: 42px; flex-basis: 42px; }
+  .dashboard-view-option strong { font-size: 16px; }
+  .login-card { border-radius: 16px; padding: 20px 17px; gap: 14px; }
+  .logo-mark { width: 46px; height: 46px; flex-basis: 46px; }
+  .brand strong { font-size: 15px; }
+  .brand small { font-size: 12px; }
+}
+@media (max-height: 720px) and (min-width: 761px) {
+  .login-page { padding-block: 18px; gap: 28px; }
+  .login-showcase img { width: min(46vh, 340px); max-height: 46vh; }
+  .login-card { padding-block: 22px; gap: 12px; }
+}

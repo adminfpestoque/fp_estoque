@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #111;
+  background: #f3f4f6;
+  font-synthesis: none;
+  --gold: #f5b400;
+  --gold-dark: #d99f00;
+  --black: #111111;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --surface: #ffffff;
+  --danger: #c62828;
+  --success: #207a45;
+  --warning: #9a6700;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #f3f4f6; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+input, select, textarea {
+  width: 100%; border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 12px; background: white; color: #111; outline: none; min-height: 42px;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(245,180,0,.16); }
+textarea { min-height: 92px; resize: vertical; }
+small.block { display: block; color: var(--muted); margin-top: 3px; }
+.muted { color: var(--muted); }
+.padded { padding: 16px; }
+.full { grid-column: 1 / -1; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.brand strong { display: block; font-size: 16px; line-height: 1.15; }
+.brand small { display: block; color: #777; margin-top: 2px; line-height: 1.2; }
+.brand.compact { justify-content: center; }
+.logo-mark {
+  display: block;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  object-fit: contain;
+  border-radius: 50%;
+  filter: drop-shadow(0 4px 9px rgba(0,0,0,.24));
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(480px, 590px) minmax(390px, 460px);
+  align-items: center;
+  justify-content: center;
+  gap: clamp(52px, 5vw, 92px);
+  padding: clamp(28px, 4vw, 64px);
+  background: #101010;
+  position: relative;
+  overflow: hidden;
+}
+.login-accent {
+  position: absolute;
+  width: 70vw;
+  height: 70vw;
+  background: var(--gold);
+  transform: rotate(45deg);
+  right: -40vw;
+  bottom: -48vw;
+}
+.login-showcase {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.login-showcase img {
+  display: block;
+  width: clamp(470px, 31vw, 590px);
+  max-width: 100%;
+  max-height: min(74vh, 650px);
+  aspect-ratio: 1;
+  object-fit: contain;
+  filter: drop-shadow(0 28px 55px rgba(0,0,0,.48));
+  animation: logo-enter .55s ease both;
+}
+.login-card {
+  position: relative;
+  z-index: 2;
+  width: min(460px, 100%);
+  background: #fff;
+  border-radius: 20px;
+  padding: 34px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.35);
+  display: grid;
+  gap: 17px;
+}
+.login-card .brand { display: none; }
+.login-heading { margin-top: 4px; }
+.login-heading p { color: var(--muted); margin: 0 0 4px; }
+.login-heading h1 { font-size: 32px; margin: 0; }
+.password-input { position: relative; }
+.password-input input { padding-right: 46px; }
+.password-input button { position: absolute; right: 5px; top: 5px; width: 34px; height: 34px; border: 0; background: transparent; display: grid; place-items: center; color: #555; }
+.link-button { border: 0; background: transparent; color: #9a6700; font-weight: 700; text-align: center; }
+.form-error { background: #fff1f0; color: #b42318; border: 1px solid #fecdca; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+@keyframes logo-enter { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+
+.btn { border: 0; border-radius: 10px; min-height: 42px; padding: 10px 16px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; transition: .15s ease; }
+.btn:hover { transform: translateY(-1px); }
+.btn-primary { background: var(--gold); color: #111; }
+.btn-primary:hover { background: #ffc21a; }
+.btn-secondary { background: #f3f4f6; color: #111; border: 1px solid var(--border); }
+.btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+.btn-success { background: #dcfce7; color: var(--success); }
+.icon-btn { border: 0; width: 36px; height: 36px; display: inline-grid; place-items: center; border-radius: 9px; background: #f3f4f6; color: #333; }
+.icon-btn:hover { background: #e5e7eb; }
+.icon-btn.danger, .row-actions button.danger { color: var(--danger); background: #fff1f0; }
+.icon-btn.success, .row-actions button.success { color: var(--success); background: #ecfdf3; }
