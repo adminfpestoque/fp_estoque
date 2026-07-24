@@ -136,6 +136,9 @@ export function ProductsPage({ notify, me }) {
       if (type === "delete") {
         await api.delete(`products/${row.id}/`);
         notify("Produto excluído permanentemente.");
+      } else if (type === "blocked" && !pendingAction.canDeactivate) {
+        setPendingAction(null);
+        return;
       } else {
         const activate = type === "activate";
         await api.post(`products/${row.id}/${activate ? "activate" : "deactivate"}/`);
@@ -144,7 +147,18 @@ export function ProductsPage({ notify, me }) {
       setPendingAction(null);
       list.reload();
     } catch (error) {
-      notify(getError(error), "error");
+      if (type === "delete" && error?.response?.status === 409) {
+        const data = error.response.data || {};
+        setPendingAction({
+          type: "blocked",
+          row,
+          message: data.detail || "Este produto possui histórico e não pode ser excluído permanentemente.",
+          blockers: data.blockers || data.vinculos || [],
+          canDeactivate: data.can_deactivate ?? row.active,
+        });
+      } else {
+        notify(getError(error), "error");
+      }
     } finally {
       setActionBusy(false);
     }
@@ -156,9 +170,27 @@ export function ProductsPage({ notify, me }) {
       return {
         title: "Excluir produto permanentemente",
         message: `Deseja realmente excluir “${row.name}”?`,
-        detail: "Esta ação é irreversível. A exclusão só será permitida quando o produto estiver sem estoque e sem vínculos com lotes, entradas, saídas, ajustes, inventários ou movimentações. Caso exista histórico, use Inativar.",
+        detail: "Esta ação é irreversível. A exclusão só será permitida quando o produto estiver sem estoque e sem vínculos com lotes, entradas, saídas, ajustes, inventários ou movimentações.",
         confirmLabel: "Excluir permanentemente",
         confirmVariant: "danger",
+      };
+    }
+    if (type === "blocked") {
+      const blockerText = (pendingAction.blockers || [])
+        .map((item) => typeof item === "string" ? item : item.description || `${item.label}${item.count ? ` (${item.count})` : ""}`)
+        .filter(Boolean)
+        .join(", ");
+      return {
+        title: "Produto protegido pelo histórico",
+        message: pendingAction.message,
+        detail: [
+          blockerText ? `Vínculos encontrados: ${blockerText}.` : "",
+          pendingAction.canDeactivate
+            ? "Você pode inativar o produto. O cadastro deixará de ser usado em novas operações, mas o histórico continuará disponível."
+            : "O produto já está inativo e deve permanecer no sistema para preservar a rastreabilidade.",
+        ].filter(Boolean).join(" "),
+        confirmLabel: pendingAction.canDeactivate ? "Inativar produto" : "Entendi",
+        confirmVariant: pendingAction.canDeactivate ? "warning" : "secondary",
       };
     }
     const activate = type === "activate";

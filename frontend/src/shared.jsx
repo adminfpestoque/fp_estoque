@@ -45,7 +45,14 @@ api.interceptors.request.use((config) => {
 
 let refreshing = null;
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = String(response.config?.method || "get").toLowerCase();
+    const url = String(response.config?.url || "");
+    if (["post", "put", "patch", "delete"].includes(method) && !url.includes("auth/")) {
+      window.dispatchEvent(new CustomEvent("fp:notifications-changed"));
+    }
+    return response;
+  },
   async (error) => {
     const original = error.config;
     if (error.response?.status === 401 && !original?._retry && localStorage.getItem("fp_refresh")) {
@@ -213,18 +220,41 @@ function flattenError(value, prefix = "") {
   if (typeof value === "string" || typeof value === "number") {
     return [`${prefix ? `${prefix}: ` : ""}${value}`];
   }
-  if (Array.isArray(value)) return value.flatMap((item) => flattenError(item, prefix));
+  if (Array.isArray(value)) {
+    const messages = value.flatMap((item) => flattenError(item));
+    if (!messages.length) return [];
+    return prefix ? [`${prefix}: ${messages.join(", ")}`] : messages;
+  }
   if (typeof value === "object") {
     return Object.entries(value)
-      .filter(([key]) => key !== "status_code")
+      .filter(([key]) => !["status_code", "blockers", "vinculos", "can_deactivate"].includes(key))
       .flatMap(([key, item]) => flattenError(item, key === "non_field_errors" ? prefix : translatedFieldName(key)));
   }
   return [String(value)];
 }
 
+function formatBlockers(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  const labels = items.map((item) => {
+    if (typeof item === "string") return item;
+    return item?.description || [item?.label, item?.count ? `(${item.count})` : ""].filter(Boolean).join(" ");
+  }).filter(Boolean);
+  return labels.length ? `Vínculos encontrados: ${labels.join(", ")}.` : "";
+}
+
 export function getError(error) {
   const data = error?.response?.data;
   if (!data) return "Não foi possível concluir a operação.";
+  if (typeof data === "string") return data;
+
+  if (data.detail != null) {
+    const detail = flattenError(data.detail)
+      .map((message) => message.replace(/^Detalhe:\s*/i, ""))
+      .join(" • ");
+    const blockers = formatBlockers(data.blockers || data.vinculos);
+    return [detail, blockers].filter(Boolean).join(" ") || "Não foi possível concluir a operação.";
+  }
+
   const messages = flattenError(data);
   return messages.length ? messages.join(" • ") : "Não foi possível concluir a operação.";
 }

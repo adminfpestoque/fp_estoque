@@ -59,7 +59,12 @@ function App() {
     loadMe();
     loadNotifications();
     const timer = window.setInterval(loadNotifications, 60_000);
-    return () => window.clearInterval(timer);
+    const handleNotificationsChanged = () => loadNotifications();
+    window.addEventListener("fp:notifications-changed", handleNotificationsChanged);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("fp:notifications-changed", handleNotificationsChanged);
+    };
   }, [logged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function markNotificationRead(notification) {
