@@ -26,33 +26,14 @@ jobs:
           echo "dda0bad52ba9ba2783266e820fd7e5f7a2aa3931a85d500e3e70e6113f4480fc  /tmp/governance-fixes.tar.gz" | sha256sum --check
           mkdir -p /tmp/governance-fixes
           tar -xzf /tmp/governance-fixes.tar.gz -C /tmp/governance-fixes
-
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('/tmp/governance-fixes/backend/inventory/views/common.py')
-          text = path.read_text()
-          if 'def error_detail' not in text:
-              marker = 'from ..services import audit\n\n\n'
-              helper = '''from ..services import audit
-
-
-def error_detail(exc):
-    if hasattr(exc, "message_dict"):
-        return exc.message_dict
-    return getattr(exc, "messages", [str(exc)])
-
-
-'''
-              text = text.replace(marker, helper)
-              path.write_text(text)
-          PY
+          cp .agent-payload/common-fixed.py /tmp/common-fixed.py
 
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
           git fetch origin main
           git checkout -B agent/data-governance-clean origin/main
 
-          cp /tmp/governance-fixes/backend/inventory/views/common.py backend/inventory/views/common.py
+          cp /tmp/common-fixed.py backend/inventory/views/common.py
           cp /tmp/governance-fixes/backend/inventory/views/catalog.py backend/inventory/views/catalog.py
           cp /tmp/governance-fixes/backend/inventory/permissions.py backend/inventory/permissions.py
           cp /tmp/governance-fixes/backend/inventory/test_products.py backend/inventory/test_products.py
