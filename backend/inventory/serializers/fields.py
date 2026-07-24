@@ -68,8 +68,11 @@ class NullableUniqueCharField(serializers.CharField):
         kwargs.setdefault("trim_whitespace", True)
         super().__init__(*args, **kwargs)
 
-    def to_internal_value(self, data):
-        if data is None:
+    def run_validation(self, data=serializers.empty):
+        if data is None or (isinstance(data, str) and not data.strip()):
             return None
+        return super().run_validation(data)
+
+    def to_internal_value(self, data):
         value = super().to_internal_value(data)
         return value or None
