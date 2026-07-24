@@ -25,11 +25,13 @@ jobs:
         run: |
           set -euo pipefail
           cp .agent-tools/apply_product_soft_delete.py /tmp/apply_product_soft_delete.py
+          cp .agent-tools/patch_product_history_test.py /tmp/patch_product_history_test.py
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
           git fetch origin main
           git checkout -B agent/product-soft-delete-ready origin/main
           python /tmp/apply_product_soft_delete.py
+          python /tmp/patch_product_history_test.py
 
           git add backend/inventory
           git commit -m "feat: keep deleted products in historical records"
