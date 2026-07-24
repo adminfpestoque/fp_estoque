@@ -239,3 +239,42 @@ class ProductTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("package_quantity", response.data)
         self.assertIn("minimum_stock", response.data)
+    def test_product_can_be_created_without_internal_identifiers(self):
+        response = self.client.post(
+            "/api/products/",
+            {
+                "name": "Água mineral",
+                "category": self.category.id,
+                "package_type": "Garrafa",
+                "volume": 500,
+                "volume_unit": "ML",
+                "cost_price": "1,50",
+                "sale_price": "2,50",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["code"].startswith("PROD-"))
+        self.assertEqual(response.data["unit"], "UN")
+        self.assertEqual(response.data["volume"], 500)
+        self.assertEqual(response.data["volume_unit"], "ML")
+        self.assertEqual(response.data["package_description"], "Garrafa 500ML")
+        self.assertIsNone(response.data["sku"])
+        self.assertIsNone(response.data["barcode"])
+
+    def test_product_rejects_invalid_volume(self):
+        response = self.client.post(
+            "/api/products/",
+            {
+                "name": "Produto sem volume",
+                "category": self.category.id,
+                "volume": 0,
+                "volume_unit": "ML",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("volume", response.data)
+

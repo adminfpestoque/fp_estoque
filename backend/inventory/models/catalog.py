@@ -43,6 +43,13 @@ class Supplier(TimeStamped):
 
 
 class Product(TimeStamped):
+    VOLUME_ML = "ML"
+    VOLUME_L = "L"
+    VOLUME_UNITS = [
+        (VOLUME_ML, "Mililitros (ML)"),
+        (VOLUME_L, "Litros (L)"),
+    ]
+
     code = models.CharField(max_length=50, unique=True)
     sku = models.CharField(max_length=80, unique=True, blank=True, null=True)
     barcode = models.CharField(max_length=80, unique=True, blank=True, null=True)
@@ -60,6 +67,8 @@ class Product(TimeStamped):
     )
     brand = models.CharField(max_length=100, blank=True)
     package_type = models.CharField(max_length=60, blank=True)
+    volume = models.PositiveIntegerField(null=True, blank=True)
+    volume_unit = models.CharField(max_length=2, choices=VOLUME_UNITS, default=VOLUME_ML)
     unit = models.CharField(max_length=20, default="UN")
     package_quantity = models.DecimalField(
         max_digits=12, decimal_places=3, default=1
@@ -93,6 +102,11 @@ class Product(TimeStamped):
                 name="inventory_product_nonnegative_values",
             )
         ]
+
+    @property
+    def package_description(self):
+        measurement = f"{self.volume}{self.volume_unit}" if self.volume else ""
+        return " ".join(part for part in [self.package_type.strip(), measurement] if part)
 
     @property
     def low_stock(self):

@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -48,6 +50,17 @@ class ProductSupplierSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True,
+        validators=[
+            UniqueValidator(
+                queryset=Product.objects.all(),
+                message="Já existe um produto com este código interno.",
+            )
+        ],
+    )
     sku = NullableUniqueCharField(
         max_length=80,
         validators=[
@@ -67,6 +80,7 @@ class ProductSerializer(serializers.ModelSerializer):
         ],
     )
     package_quantity = IntegerQuantityField(min_value=1, default=1)
+    volume = IntegerQuantityField(min_value=1, default=1)
     cost_price = MoneyField(max_digits=12, min_value=0, default=0)
     sale_price = MoneyField(max_digits=12, min_value=0, default=0)
     stock = IntegerQuantityField(read_only=True)
@@ -78,6 +92,7 @@ class ProductSerializer(serializers.ModelSerializer):
     stock_value = MoneyField(max_digits=18, read_only=True)
     lots_count = serializers.IntegerField(read_only=True)
     supplier_links = ProductSupplierSerializer(many=True, read_only=True)
+    package_description = serializers.CharField(read_only=True)
 
     class Meta:
         model = Product
@@ -88,7 +103,30 @@ class ProductSerializer(serializers.ModelSerializer):
         return value.strip()
 
     def validate_unit(self, value):
-        return (value or "UN").strip().upper()
+        return "UN"
+
+    def validate_volume_unit(self, value):
+        return str(value or Product.VOLUME_ML).strip().upper()
+
+    @staticmethod
+    def _generate_code():
+        while True:
+            code = f"PROD-{uuid4().hex[:8].upper()}"
+            if not Product.objects.filter(code=code).exists():
+                return code
+
+    def create(self, validated_data):
+        if not validated_data.get("code"):
+            validated_data["code"] = self._generate_code()
+        validated_data["unit"] = "UN"
+        validated_data.setdefault("package_quantity", 1)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if not validated_data.get("code"):
+            validated_data.pop("code", None)
+        validated_data["unit"] = "UN"
+        return super().update(instance, validated_data)
 
     def validate(self, attrs):
         minimum = attrs.get("minimum_stock", getattr(self.instance, "minimum_stock", 0))
