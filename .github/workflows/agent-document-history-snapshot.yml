@@ -1,0 +1,28 @@
+name: Agent document history snapshot
+
+on:
+  push:
+    branches:
+      - agent/document-history
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Upload repository snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: fp-estoque-document-history-source
+          path: |
+            .
+            !.git/**
+            !frontend/node_modules/**
+            !frontend/dist/**
+            !backend/.venv/**
+            !backend/db.sqlite3
+          retention-days: 1
