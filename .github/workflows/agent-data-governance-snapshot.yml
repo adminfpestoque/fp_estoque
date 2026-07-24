@@ -1,9 +1,9 @@
 name: Agent data governance snapshot
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/data-governance-deletion
+      - main
 
 permissions:
   contents: read
