@@ -5,6 +5,7 @@ from .models import Category, UserProfile
 
 User = get_user_model()
 
+
 class CategoryTest(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -56,7 +57,7 @@ class CategoryTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("name", response.data)
 
-    def test_delete_category_only_deactivates_it(self):
+    def test_delete_category_is_blocked_to_preserve_governance(self):
         category = Category.objects.create(
             name="Descartáveis",
             description="Produtos descartáveis",
@@ -64,10 +65,8 @@ class CategoryTest(TestCase):
 
         response = self.client.delete(f"/api/categories/{category.id}/")
 
-        self.assertEqual(response.status_code, 204)
-
-        category.refresh_from_db()
-        self.assertFalse(category.active)
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(Category.objects.filter(id=category.id, active=True).exists())
 
     def test_category_list_is_sorted_by_name(self):
         Category.objects.create(name="Zebra")

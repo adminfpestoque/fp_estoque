@@ -48,6 +48,6 @@ class RoleBasedPermission(IsInventoryUser):
             return False
         if view_name in self.read_only_for_operator:
             return request.method in {"GET", "HEAD", "OPTIONS"}
-        if action in {"destroy", "cancel", "conclude", "reverse", "refresh", "reset_password"}:
+        if action in {"destroy", "activate", "deactivate", "cancel", "conclude", "reverse", "refresh", "reset_password"}:
             return False
         return True
