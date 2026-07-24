@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/ui-portuguese-refactor
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
