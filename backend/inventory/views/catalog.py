@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from ..models import Category, Lot, Product, Supplier, SystemSetting
 from ..permissions import IsAdministrator, IsInventoryUser
 from ..serializers import CategorySerializer, LotSerializer, MeSerializer, ProductSerializer, SupplierSerializer, UserSerializer
-from ..services import audit
+from ..services import audit, refresh_alerts
 from .common import BaseViewSet
 
 User = get_user_model()
@@ -70,6 +70,18 @@ class ProductViewSet(BaseViewSet):
     filterset_fields = ["category", "supplier", "active", "brand"]
     search_fields = ["name", "code", "sku", "barcode", "brand", "description", "location"]
     ordering_fields = ["name", "stock", "minimum_stock", "cost_price", "sale_price", "created_at"]
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        refresh_alerts(notify=True)
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        refresh_alerts(notify=True)
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        refresh_alerts(notify=True)
 
     def get_queryset(self):
         qs = Product.objects.select_related("category", "supplier").prefetch_related("supplier_links__supplier").annotate(lots_count=Count("lots", distinct=True))

@@ -1,5 +1,3 @@
-from decimal import Decimal, InvalidOperation
-
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -11,6 +9,7 @@ from ..models import InventoryCount, InventoryItem, Product
 from ..permissions import IsAdministrator
 from ..serializers import InventoryItemSerializer, InventorySerializer
 from ..services import audit, refresh_alerts
+from ..validators import parse_integer_quantity
 from .common import BaseViewSet, error_detail
 
 
@@ -104,15 +103,10 @@ class InventoryViewSet(BaseViewSet):
                 {"counted_quantity": "Informe a quantidade física contada."}
             )
         try:
-            counted = Decimal(str(raw_counted))
-        except (InvalidOperation, TypeError, ValueError) as exc:
-            raise DRFValidationError(
-                {"counted_quantity": "Informe uma quantidade válida."}
-            ) from exc
-        if counted < 0:
-            raise DRFValidationError(
-                {"counted_quantity": "A quantidade contada não pode ser negativa."}
-            )
+            counted = parse_integer_quantity(raw_counted, allow_zero=True)
+        except Exception as exc:
+            detail = getattr(exc, "messages", [str(exc)])
+            raise DRFValidationError({"counted_quantity": detail}) from exc
 
         product.refresh_from_db(fields=["stock", "updated_at"])
         justification = str(payload.get("justification") or "").strip()
@@ -203,7 +197,7 @@ class InventoryViewSet(BaseViewSet):
         inventory = self.get_object()
         try:
             inventory.conclude(request.user)
-            refresh_alerts(notify=False)
+            refresh_alerts(notify=True)
             audit(
                 request.user,
                 "CONCLUDE",

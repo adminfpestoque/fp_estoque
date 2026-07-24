@@ -175,3 +175,67 @@ class ProductTest(TestCase):
         )
         
         self.assertEqual(response.status_code, 404)
+    def test_product_accepts_comma_or_point_for_money(self):
+        response = self.client.post(
+            "/api/products/",
+            {
+                "code": "MONEY-001",
+                "name": "Produto monetário",
+                "category": self.category.id,
+                "cost_price": "8,50",
+                "sale_price": "12.90",
+                "package_quantity": "1",
+                "minimum_stock": "2",
+                "maximum_stock": "20",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["cost_price"], "8.50")
+        self.assertEqual(response.data["sale_price"], "12.90")
+        product = Product.objects.get(code="MONEY-001")
+        self.assertEqual(product.cost_price, Decimal("8.50"))
+        self.assertEqual(product.sale_price, Decimal("12.90"))
+
+    def test_multiple_products_can_have_blank_sku_and_barcode(self):
+        for index in range(2):
+            response = self.client.post(
+                "/api/products/",
+                {
+                    "code": f"BLANK-{index}",
+                    "name": f"Produto sem identificadores {index}",
+                    "category": self.category.id,
+                    "sku": "",
+                    "barcode": "",
+                    "cost_price": "1,00",
+                    "sale_price": "2,00",
+                    "package_quantity": "1",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+
+        products = Product.objects.filter(code__startswith="BLANK-").order_by("code")
+        self.assertEqual(products.count(), 2)
+        self.assertTrue(all(product.sku is None for product in products))
+        self.assertTrue(all(product.barcode is None for product in products))
+
+    def test_product_rejects_fractional_quantities(self):
+        response = self.client.post(
+            "/api/products/",
+            {
+                "code": "FRACTION-001",
+                "name": "Produto fracionado",
+                "category": self.category.id,
+                "package_quantity": "1,5",
+                "minimum_stock": "2.5",
+                "cost_price": "1,00",
+                "sale_price": "2,00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("package_quantity", response.data)
+        self.assertIn("minimum_stock", response.data)

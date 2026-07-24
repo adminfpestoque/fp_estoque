@@ -13,7 +13,7 @@ from ..serializers import AlertSerializer, MovementSerializer
 
 ZERO = Decimal("0")
 MONEY_FIELD = DecimalField(max_digits=30, decimal_places=2)
-QUANTITY_FIELD = DecimalField(max_digits=24, decimal_places=3)
+QUANTITY_FIELD = DecimalField(max_digits=24, decimal_places=0)
 PRICE_FIELD = DecimalField(max_digits=12, decimal_places=2)
 
 

@@ -7,6 +7,7 @@ from django.db.models import F, Q
 
 from .base import TimeStamped
 from .catalog import Lot, Product
+from ..validators import parse_integer_quantity
 
 
 class Movement(TimeStamped):
@@ -100,9 +101,7 @@ class Movement(TimeStamped):
     ):
         if type not in dict(cls.TYPES):
             raise ValidationError("Tipo de movimentação inválido.")
-        quantity = Decimal(str(quantity)).copy_abs()
-        if quantity <= 0:
-            raise ValidationError("A quantidade deve ser maior que zero.")
+        quantity = parse_integer_quantity(quantity, allow_zero=False)
 
         with transaction.atomic():
             product = Product.objects.select_for_update().get(pk=product.pk)
@@ -159,7 +158,7 @@ class Movement(TimeStamped):
         output=None,
         unit_sale_price=None,
     ):
-        remaining = Decimal(str(quantity))
+        remaining = parse_integer_quantity(quantity, allow_zero=False)
         movements = []
         if preferred_lot:
             if preferred_lot.product_id != product.pk:

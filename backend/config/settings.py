@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me-use-at-least-32-characters")
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 ALLOW_LAN_DEV = os.getenv("ALLOW_LAN_DEV", "true").lower() == "true"
 
@@ -78,8 +78,6 @@ if RUNNING_TESTS or os.getenv("USE_SQLITE_FOR_TESTS", "false").lower() == "true"
     }
 else:
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-    
-    print("DATABASE_URL =", repr(DATABASE_URL))
 
     if not DATABASE_URL:
         raise RuntimeError(

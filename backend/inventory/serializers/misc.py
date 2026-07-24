@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from ..models import Alert, AuditLog, InventoryCount, InventoryItem, Notification, SystemSetting
+from .fields import IntegerQuantityField, MoneyField
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -10,20 +11,12 @@ class InventoryItemSerializer(serializers.ModelSerializer):
     product_code = serializers.CharField(source="product.code", read_only=True)
     category_name = serializers.CharField(source="product.category.name", read_only=True)
     unit = serializers.CharField(source="product.unit", read_only=True)
-    current_stock = serializers.DecimalField(
-        source="product.stock",
-        max_digits=14,
-        decimal_places=3,
-        read_only=True,
-    )
-    unit_cost = serializers.DecimalField(
-        source="product.cost_price",
-        max_digits=12,
-        decimal_places=2,
-        read_only=True,
-    )
-    difference = serializers.DecimalField(max_digits=14, decimal_places=3, read_only=True)
-    adjustment_value = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    system_quantity = IntegerQuantityField(read_only=True)
+    counted_quantity = IntegerQuantityField(min_value=0, required=False)
+    current_stock = IntegerQuantityField(source="product.stock", read_only=True)
+    unit_cost = MoneyField(source="product.cost_price", max_digits=12, read_only=True)
+    difference = IntegerQuantityField(read_only=True)
+    adjustment_value = MoneyField(max_digits=18, read_only=True)
     counted_by_name = serializers.CharField(source="counted_by.username", read_only=True)
 
     class Meta:
@@ -137,6 +130,11 @@ class AlertSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    level_display = serializers.CharField(source="get_level_display", read_only=True)
+    alert_type = serializers.CharField(source="alert.type", read_only=True)
+    alert_type_display = serializers.CharField(source="alert.get_type_display", read_only=True)
+    alert_active = serializers.BooleanField(source="alert.active", read_only=True)
+
     class Meta:
         model = Notification
         fields = "__all__"

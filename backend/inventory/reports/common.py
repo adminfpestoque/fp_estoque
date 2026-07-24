@@ -69,7 +69,7 @@ def money(value):
 
 
 def decimal_text(value):
-    return f"{Decimal(value or 0):,.3f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{Decimal(value or 0):,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def filters_used(params):

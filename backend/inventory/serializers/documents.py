@@ -2,11 +2,22 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
-from ..models import (Movement, StockAdjustment, StockEntry, StockEntryItem, StockOutput, StockOutputItem)
+from ..models import (
+    Movement,
+    StockAdjustment,
+    StockEntry,
+    StockEntryItem,
+    StockOutput,
+    StockOutputItem,
+)
+from .fields import IntegerQuantityField, MoneyField
+
 
 class StockEntryItemSerializer(serializers.ModelSerializer):
+    quantity = IntegerQuantityField(min_value=1)
+    unit_cost = MoneyField(max_digits=12, min_value=0)
     product_name = serializers.CharField(source="product.name", read_only=True)
-    subtotal = serializers.DecimalField(max_digits=16, decimal_places=2, read_only=True)
+    subtotal = MoneyField(max_digits=16, read_only=True)
     lot_number_display = serializers.CharField(source="lot.number", read_only=True)
 
     class Meta:
@@ -17,6 +28,7 @@ class StockEntryItemSerializer(serializers.ModelSerializer):
 
 class StockEntrySerializer(serializers.ModelSerializer):
     items = StockEntryItemSerializer(many=True)
+    total_value = MoneyField(max_digits=14, read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     user_name = serializers.CharField(source="user.username", read_only=True)
     cancelled_by_name = serializers.CharField(source="cancelled_by.username", read_only=True)
@@ -34,6 +46,11 @@ class StockEntrySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError("Inclua ao menos um produto.")
+        return items
 
     @transaction.atomic
     def create(self, validated_data):
@@ -56,11 +73,15 @@ class StockEntrySerializer(serializers.ModelSerializer):
             instance.items.all().delete()
             for item in items:
                 StockEntryItem.objects.create(entry=instance, **item)
+        entry_items = instance.items.all()
+        if not entry_items.exists():
+            raise serializers.ValidationError({"items": "Inclua ao menos um produto."})
         instance.recalculate_total()
         return instance
 
 
 class StockOutputItemSerializer(serializers.ModelSerializer):
+    quantity = IntegerQuantityField(min_value=1)
     product_name = serializers.CharField(source="product.name", read_only=True)
     lot_number = serializers.CharField(source="lot.number", read_only=True)
 
@@ -96,6 +117,11 @@ class StockOutputSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError("Inclua ao menos um produto.")
+        return items
+
     @transaction.atomic
     def create(self, validated_data):
         items = validated_data.pop("items", [])
@@ -116,17 +142,24 @@ class StockOutputSerializer(serializers.ModelSerializer):
             instance.items.all().delete()
             for item in items:
                 StockOutputItem.objects.create(output=instance, **item)
+        if not instance.items.exists():
+            raise serializers.ValidationError({"items": "Inclua ao menos um produto."})
         return instance
 
 
 class MovementSerializer(serializers.ModelSerializer):
+    quantity = IntegerQuantityField(min_value=1)
+    previous_stock = IntegerQuantityField(read_only=True)
+    final_stock = IntegerQuantityField(read_only=True)
+    unit_cost = MoneyField(max_digits=12, min_value=0, required=False)
+    unit_sale_price = MoneyField(max_digits=12, min_value=0, required=False)
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_code = serializers.CharField(source="product.code", read_only=True)
     category_name = serializers.CharField(source="product.category.name", read_only=True)
     lot_number = serializers.CharField(source="lot.number", read_only=True)
     user_name = serializers.CharField(source="user.username", read_only=True)
     type_display = serializers.CharField(source="get_type_display", read_only=True)
-    total_value = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    total_value = MoneyField(max_digits=18, read_only=True)
 
     class Meta:
         model = Movement
@@ -148,8 +181,15 @@ class MovementSerializer(serializers.ModelSerializer):
         lot = attrs.get("lot")
         if lot and product and lot.product_id != product.id:
             raise serializers.ValidationError({"lot": "O lote não pertence ao produto selecionado."})
-        if attrs.get("type") not in {Movement.ENTRY, Movement.OUTPUT, Movement.ADJUSTMENT_IN, Movement.ADJUSTMENT_OUT}:
-            raise serializers.ValidationError({"type": "Use entradas, saídas ou ajustes para movimentações manuais."})
+        if attrs.get("type") not in {
+            Movement.ENTRY,
+            Movement.OUTPUT,
+            Movement.ADJUSTMENT_IN,
+            Movement.ADJUSTMENT_OUT,
+        }:
+            raise serializers.ValidationError(
+                {"type": "Use entradas, saídas ou ajustes para movimentações manuais."}
+            )
         return attrs
 
     def create(self, validated_data):
@@ -161,6 +201,7 @@ class MovementSerializer(serializers.ModelSerializer):
 
 
 class StockAdjustmentSerializer(serializers.ModelSerializer):
+    quantity = IntegerQuantityField(min_value=1)
     product_name = serializers.CharField(source="product.name", read_only=True)
     lot_number = serializers.CharField(source="lot.number", read_only=True)
     user_name = serializers.CharField(source="user.username", read_only=True)
@@ -168,9 +209,19 @@ class StockAdjustmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockAdjustment
         fields = "__all__"
-        read_only_fields = ["number", "user", "status", "movement", "confirmed_at", "cancelled_at", "created_at", "updated_at"]
+        read_only_fields = [
+            "number",
+            "user",
+            "status",
+            "movement",
+            "confirmed_at",
+            "cancelled_at",
+            "created_at",
+            "updated_at",
+        ]
 
     def create(self, validated_data):
-        return StockAdjustment.objects.create(user=self.context["request"].user, **validated_data)
-
-
+        return StockAdjustment.objects.create(
+            user=self.context["request"].user,
+            **validated_data,
+        )
