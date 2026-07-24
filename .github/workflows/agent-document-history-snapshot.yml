@@ -110,4 +110,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git push origin agent/document-history-ready --force-with-lease
+          git push origin HEAD:refs/heads/agent/document-history-ready --force
