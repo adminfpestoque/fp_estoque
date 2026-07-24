@@ -26,3 +26,5 @@ jobs:
             !backend/.venv/**
             !backend/db.sqlite3
           retention-days: 1
+      - name: Confirm snapshot
+        run: echo "Governance snapshot created"
