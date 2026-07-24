@@ -3,7 +3,7 @@ import axios from "axios";
 import {
   AlertTriangle, Archive, ArrowDownToLine, ArrowUpFromLine, BarChart3, Bell, Boxes, Check,
   ChevronDown, CircleDollarSign, ClipboardCheck, Eye, EyeOff, FileDown, FileText, Gauge,
-  History, Layers3, LogOut, Menu, Package, Pencil, Plus, RefreshCw, Search, Settings,
+  History, Layers3, LogOut, Menu, Package, Pencil, Plus, Power, PowerOff, RefreshCw, Search, Settings,
   ShieldCheck, SlidersHorizontal, Trash2, Truck, UserCog, Users, Warehouse, X,
 } from "lucide-react";
 import {
@@ -108,6 +108,8 @@ const FIELD_LABELS = {
   justification: "Justificativa",
   password: "Senha",
   username: "Usuário",
+  detail: "Detalhe",
+  vinculos: "Vínculos",
 };
 
 const STATUS_LABELS = {
@@ -244,6 +246,35 @@ export function Modal({ title, children, onClose, size = "md" }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><div className={`modal modal-${size}`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-header"><h2>{title}</h2><button className="icon-btn" onClick={onClose} aria-label="Fechar"><X size={20} /></button></div><div className="modal-body">{children}</div></div></div>;
 }
 
+export function ConfirmModal({
+  title,
+  message,
+  detail,
+  confirmLabel = "Confirmar",
+  confirmVariant = "danger",
+  busy = false,
+  onConfirm,
+  onClose,
+}) {
+  return (
+    <Modal title={title} onClose={busy ? undefined : onClose}>
+      <div className="confirmation-content">
+        <div className={`confirmation-icon confirmation-${confirmVariant}`}><AlertTriangle size={24} /></div>
+        <div>
+          <p className="confirmation-message">{message}</p>
+          {detail && <p className="confirmation-detail">{detail}</p>}
+        </div>
+      </div>
+      <div className="form-actions">
+        <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
+        <Button type="button" variant={confirmVariant} onClick={onConfirm} disabled={busy}>
+          {busy ? "Processando..." : confirmLabel}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 export function Toast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return undefined;
@@ -290,7 +321,7 @@ export {
   React, useEffect, useMemo, useState,
   AlertTriangle, Archive, ArrowDownToLine, ArrowUpFromLine, BarChart3, Bell, Boxes, Check, ChevronDown,
   CircleDollarSign, ClipboardCheck, Eye, EyeOff, FileDown, FileText, Gauge, History, Layers3, LogOut, Menu,
-  Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Trash2, Truck, UserCog,
+  Package, Pencil, Plus, Power, PowerOff, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Trash2, Truck, UserCog,
   Users, Warehouse, X, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 };

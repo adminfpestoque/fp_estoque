@@ -115,6 +115,7 @@ small.block { display: block; color: var(--muted); margin-top: 3px; }
 .btn-secondary { background: #f3f4f6; color: #111; border: 1px solid var(--border); }
 .btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
 .btn-success { background: #dcfce7; color: var(--success); }
+.btn-warning { background: #fef3c7; color: var(--warning); border: 1px solid #fde68a; }
 .icon-btn { border: 0; width: 36px; height: 36px; display: inline-grid; place-items: center; border-radius: 9px; background: #f3f4f6; color: #333; }
 .icon-btn:hover { background: #e5e7eb; }
 .icon-btn.danger, .row-actions button.danger { color: var(--danger); background: #fff1f0; }

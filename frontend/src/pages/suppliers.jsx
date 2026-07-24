@@ -7,12 +7,16 @@ import {
   fmtMoney,
   getError,
   Button,
+  ConfirmModal,
   Modal,
   Field,
   Pagination,
   DataTable,
+  StatusBadge,
   Pencil,
   Plus,
+  Power,
+  PowerOff,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
@@ -162,6 +166,8 @@ function CityStateFields({ form, setForm }) {
 export function SuppliersPage({ notify, me }) {
   const list = useList("suppliers/");
   const [form, setForm] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   async function save(event) {
     event.preventDefault();
@@ -195,6 +201,22 @@ export function SuppliersPage({ notify, me }) {
     }
   }
 
+  async function toggleStatus() {
+    if (!pendingAction) return;
+    setActionBusy(true);
+    try {
+      const activate = !pendingAction.active;
+      await api.post(`suppliers/${pendingAction.id}/${activate ? "activate" : "deactivate"}/`);
+      notify(`Fornecedor ${activate ? "ativado" : "inativado"} com sucesso.`);
+      setPendingAction(null);
+      list.reload();
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -209,6 +231,14 @@ export function SuppliersPage({ notify, me }) {
           onChange={(search) => list.setParams({ ...list.params, search, page: 1 })}
           placeholder="Fornecedor, documento, responsável ou cidade..."
         />
+        <select
+          value={list.params.active ?? ""}
+          onChange={(event) => list.setParams({ ...list.params, active: event.target.value, page: 1 })}
+        >
+          <option value="">Ativos e inativos</option>
+          <option value="true">Somente ativos</option>
+          <option value="false">Somente inativos</option>
+        </select>
       </div>
 
       <section className="panel">
@@ -225,11 +255,26 @@ export function SuppliersPage({ notify, me }) {
             { key: "entries_count", label: "Entradas" },
             { key: "entries_value", label: "Valor recebido", render: (row) => fmtMoney(row.entries_value) },
             {
+              key: "active",
+              label: "Situação",
+              render: (row) => (
+                <StatusBadge value={row.active ? "active" : "inactive"} label={row.active ? "Ativo" : "Inativo"} />
+              ),
+            },
+            {
               key: "actions",
               label: "Ações",
               render: (row) => me.permissions.is_admin ? (
                 <div className="row-actions">
-                  <button onClick={() => setForm({ ...row })} aria-label={`Editar ${row.name}`}><Pencil size={16} /></button>
+                  <button onClick={() => setForm({ ...row })} title="Editar fornecedor" aria-label={`Editar ${row.name}`}><Pencil size={16} /></button>
+                  <button
+                    className={row.active ? "warning" : "success"}
+                    onClick={() => setPendingAction(row)}
+                    title={row.active ? "Inativar fornecedor" : "Ativar fornecedor"}
+                    aria-label={`${row.active ? "Inativar" : "Ativar"} ${row.name}`}
+                  >
+                    {row.active ? <PowerOff size={16} /> : <Power size={16} />}
+                  </button>
                 </div>
               ) : "-",
             },
@@ -284,18 +329,27 @@ export function SuppliersPage({ notify, me }) {
             <Field label="Observações">
               <textarea value={form.notes || ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
             </Field>
-            <Field label="Situação">
-              <select value={String(form.active)} onChange={(event) => setForm({ ...form, active: event.target.value === "true" })}>
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
-            </Field>
             <div className="form-actions full">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancelar</Button>
               <Button>Salvar fornecedor</Button>
             </div>
           </form>
         </Modal>
+      )}
+
+      {pendingAction && (
+        <ConfirmModal
+          title={pendingAction.active ? "Inativar fornecedor" : "Ativar fornecedor"}
+          message={`${pendingAction.active ? "Inativar" : "Ativar"} “${pendingAction.name}”?`}
+          detail={pendingAction.active
+            ? "O fornecedor e todo o histórico de entradas serão preservados, mas ele ficará indisponível para novos vínculos."
+            : "O fornecedor voltará a ficar disponível para novos vínculos e cadastros."}
+          confirmLabel={pendingAction.active ? "Inativar fornecedor" : "Ativar fornecedor"}
+          confirmVariant={pendingAction.active ? "warning" : "success"}
+          busy={actionBusy}
+          onClose={() => setPendingAction(null)}
+          onConfirm={toggleStatus}
+        />
       )}
     </>
   );

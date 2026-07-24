@@ -5,12 +5,15 @@ import {
   fmtDate,
   getError,
   Button,
+  ConfirmModal,
   Modal,
   Field,
   DataTable,
   StatusBadge,
   Pencil,
   Plus,
+  Power,
+  PowerOff,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
 import { useList } from "./listing.jsx";
@@ -29,11 +32,17 @@ const EMPTY_USER = {
   password: "",
 };
 
-export function UsersPage({ notify }) {
+function isActive(row) {
+  return Boolean(row.is_active && row.profile?.active);
+}
+
+export function UsersPage({ notify, me }) {
   const list = useList("users/");
   const [form, setForm] = useState(null);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   function startNewUser() {
     setFormError("");
@@ -78,11 +87,8 @@ export function UsersPage({ notify }) {
     };
 
     try {
-      if (form.id) {
-        await api.put(`users/${form.id}/`, payload);
-      } else {
-        await api.post("users/", payload);
-      }
+      if (form.id) await api.put(`users/${form.id}/`, payload);
+      else await api.post("users/", payload);
       notify(form.id ? "Usuário atualizado com sucesso." : "Usuário criado com sucesso.");
       setForm(null);
       list.reload();
@@ -95,13 +101,48 @@ export function UsersPage({ notify }) {
     }
   }
 
+  async function toggleStatus() {
+    if (!pendingAction) return;
+    setActionBusy(true);
+    try {
+      const activate = !isActive(pendingAction);
+      await api.post(`users/${pendingAction.id}/${activate ? "activate" : "deactivate"}/`);
+      notify(`Usuário ${activate ? "ativado" : "inativado"} com sucesso.`);
+      setPendingAction(null);
+      list.reload();
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="Usuários e permissões"
-        description="Cadastre usuários e defina diretamente o perfil de acesso de cada pessoa."
+        description="Contas são preservadas para auditoria e podem ser ativadas ou inativadas."
         actions={<Button icon={Plus} onClick={startNewUser}>Novo usuário</Button>}
       />
+
+      <div className="filters-bar">
+        <select
+          value={list.params.is_active ?? ""}
+          onChange={(event) => list.setParams({ ...list.params, is_active: event.target.value, page: 1 })}
+        >
+          <option value="">Ativos e inativos</option>
+          <option value="true">Somente ativos</option>
+          <option value="false">Somente inativos</option>
+        </select>
+        <select
+          value={list.params.inventory_profile__role || ""}
+          onChange={(event) => list.setParams({ ...list.params, inventory_profile__role: event.target.value, page: 1 })}
+        >
+          <option value="">Todos os perfis</option>
+          <option value="ADMIN">Administradores</option>
+          <option value="OPERATOR">Operadores de estoque</option>
+        </select>
+      </div>
 
       <section className="panel">
         <DataTable
@@ -126,8 +167,8 @@ export function UsersPage({ notify }) {
               label: "Situação",
               render: (row) => (
                 <StatusBadge
-                  value={row.is_active && row.profile?.active ? "active" : "inactive"}
-                  label={row.is_active && row.profile?.active ? "Ativo" : "Inativo"}
+                  value={isActive(row) ? "active" : "inactive"}
+                  label={isActive(row) ? "Ativo" : "Inativo"}
                 />
               ),
             },
@@ -136,9 +177,22 @@ export function UsersPage({ notify }) {
               key: "actions",
               label: "Ações",
               render: (row) => (
-                <button className="icon-btn" onClick={() => edit(row)} aria-label={`Editar ${row.username}`}>
-                  <Pencil size={16} />
-                </button>
+                <div className="row-actions">
+                  <button onClick={() => edit(row)} title="Editar usuário" aria-label={`Editar ${row.username}`}>
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    className={isActive(row) ? "warning" : "success"}
+                    onClick={() => setPendingAction(row)}
+                    disabled={row.id === me?.id && isActive(row)}
+                    title={row.id === me?.id && isActive(row)
+                      ? "O usuário atual não pode ser inativado"
+                      : isActive(row) ? "Inativar usuário" : "Ativar usuário"}
+                    aria-label={`${isActive(row) ? "Inativar" : "Ativar"} ${row.username}`}
+                  >
+                    {isActive(row) ? <PowerOff size={16} /> : <Power size={16} />}
+                  </button>
+                </div>
               ),
             },
           ]}
@@ -161,25 +215,15 @@ export function UsersPage({ notify }) {
             </Field>
 
             <Field label="CPF" hint="Opcional">
-              <input
-                value={form.cpf}
-                onChange={(event) => setForm({ ...form, cpf: event.target.value })}
-              />
+              <input value={form.cpf} onChange={(event) => setForm({ ...form, cpf: event.target.value })} />
             </Field>
 
             <Field label="Telefone" hint="Opcional">
-              <input
-                value={form.phone}
-                onChange={(event) => setForm({ ...form, phone: event.target.value })}
-              />
+              <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             </Field>
 
             <Field label="E-mail" hint="Opcional">
-              <input
-                type="email"
-                value={form.email}
-                onChange={(event) => setForm({ ...form, email: event.target.value })}
-              />
+              <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
             </Field>
 
             <Field label="Nome de usuário" required>
@@ -207,25 +251,9 @@ export function UsersPage({ notify }) {
             </Field>
 
             <Field label="Perfil de acesso" required>
-              <select
-                value={form.role}
-                onChange={(event) => setForm({ ...form, role: event.target.value })}
-              >
+              <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>
                 <option value="ADMIN">Administrador</option>
                 <option value="OPERATOR">Operador de estoque</option>
-              </select>
-            </Field>
-
-            <Field label="Situação" required>
-              <select
-                value={String(form.is_active && form.profile_active)}
-                onChange={(event) => {
-                  const active = event.target.value === "true";
-                  setForm({ ...form, is_active: active, profile_active: active });
-                }}
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
               </select>
             </Field>
 
@@ -239,6 +267,21 @@ export function UsersPage({ notify }) {
             </div>
           </form>
         </Modal>
+      )}
+
+      {pendingAction && (
+        <ConfirmModal
+          title={isActive(pendingAction) ? "Inativar usuário" : "Ativar usuário"}
+          message={`${isActive(pendingAction) ? "Inativar" : "Ativar"} “${pendingAction.profile?.full_name || pendingAction.username}”?`}
+          detail={isActive(pendingAction)
+            ? "A conta será preservada para auditoria, mas o usuário perderá o acesso ao sistema imediatamente."
+            : "O usuário voltará a ter acesso conforme seu perfil de permissões."}
+          confirmLabel={isActive(pendingAction) ? "Inativar usuário" : "Ativar usuário"}
+          confirmVariant={isActive(pendingAction) ? "warning" : "success"}
+          busy={actionBusy}
+          onClose={() => setPendingAction(null)}
+          onConfirm={toggleStatus}
+        />
       )}
     </>
   );

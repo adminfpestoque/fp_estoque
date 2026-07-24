@@ -7,6 +7,7 @@ import {
   fmtDate,
   getError,
   Button,
+  ConfirmModal,
   DataTable,
   StatusBadge,
   Bell,
@@ -20,6 +21,8 @@ export function NotificationsPage({ notify, onChanged }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("unread");
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -57,15 +60,24 @@ export function NotificationsPage({ notify, onChanged }) {
     }
   }
 
-  async function clearRead() {
-    if (!window.confirm("Remover todas as notificações já lidas?")) return;
+  async function deleteConfirmed() {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await api.delete("notifications/clear_read/");
-      notify("Notificações lidas removidas.");
+      if (pendingDelete.type === "all-read") {
+        const response = await api.delete("notifications/clear_read/");
+        notify(`${response.data.deleted} notificação(ões) lida(s) excluída(s).`);
+      } else {
+        await api.delete(`notifications/${pendingDelete.row.id}/`);
+        notify("Notificação excluída permanentemente.");
+      }
+      setPendingDelete(null);
       await load();
       await onChanged?.();
     } catch (error) {
       notify(getError(error), "error");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -76,7 +88,9 @@ export function NotificationsPage({ notify, onChanged }) {
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={load}>Atualizar</Button>
             <Button variant="secondary" icon={Check} onClick={markAll}>Marcar todas como lidas</Button>
-            <Button variant="danger" icon={Trash2} onClick={clearRead}>Limpar lidas</Button>
+            <Button variant="danger" icon={Trash2} onClick={() => setPendingDelete({ type: "all-read" })}>
+              Excluir lidas
+            </Button>
           </>
         )}
       />
@@ -115,12 +129,35 @@ export function NotificationsPage({ notify, onChanged }) {
                   <button onClick={() => mark(row, !row.read)} title={row.read ? "Marcar como não lida" : "Marcar como lida"}>
                     {row.read ? <Bell size={16} /> : <Check size={16} />}
                   </button>
+                  <button
+                    className="danger"
+                    onClick={() => setPendingDelete({ type: "single", row })}
+                    title="Excluir notificação permanentemente"
+                    aria-label={`Excluir notificação ${row.title}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ),
             },
           ]}
         />
       </section>
+
+      {pendingDelete && (
+        <ConfirmModal
+          title={pendingDelete.type === "all-read" ? "Excluir notificações lidas" : "Excluir notificação"}
+          message={pendingDelete.type === "all-read"
+            ? "Deseja realmente excluir permanentemente todas as notificações já lidas?"
+            : `Deseja realmente excluir a notificação “${pendingDelete.row.title}”?`}
+          detail="Esta ação é permanente e não poderá ser desfeita."
+          confirmLabel={pendingDelete.type === "all-read" ? "Excluir todas as lidas" : "Excluir notificação"}
+          confirmVariant="danger"
+          busy={deleting}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={deleteConfirmed}
+        />
+      )}
     </>
   );
 }

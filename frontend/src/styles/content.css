@@ -179,3 +179,13 @@ tbody tr:hover { background: #fffdf5; }
 .city-suggestions button:focus { background: #fff8dc; }
 .city-suggestions button strong { color: #765800; font-size: 12px; }
 .city-suggestions-empty { padding: 14px; color: var(--muted); text-align: center; }
+
+.confirmation-content { display: flex; gap: 14px; align-items: flex-start; }
+.confirmation-icon { width: 46px; height: 46px; flex: 0 0 46px; border-radius: 12px; display: grid; place-items: center; }
+.confirmation-danger { color: var(--danger); background: #fee2e2; }
+.confirmation-success { color: var(--success); background: #dcfce7; }
+.confirmation-warning { color: var(--warning); background: #fef3c7; }
+.confirmation-message { margin: 2px 0 6px; font-weight: 800; color: #222; line-height: 1.45; }
+.confirmation-detail { margin: 0; color: var(--muted); line-height: 1.5; }
+.row-actions button.warning { color: var(--warning); background: #fffbeb; }
+.inactive-row { opacity: .68; }

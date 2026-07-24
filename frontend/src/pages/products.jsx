@@ -9,6 +9,7 @@ import {
   formatMoneyInput,
   getError,
   Button,
+  ConfirmModal,
   Modal,
   Field,
   Pagination,
@@ -17,6 +18,8 @@ import {
   Package,
   Pencil,
   Plus,
+  Power,
+  PowerOff,
   Trash2,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
@@ -44,12 +47,20 @@ function productSubtitle(row) {
     .join(" • ") || row.category_name;
 }
 
+function stockLevel(row) {
+  if (Number(row.stock) <= 0) return ["out", "Sem estoque"];
+  if (row.low_stock) return ["low", "Estoque baixo"];
+  return ["normal", "Normal"];
+}
+
 export function ProductsPage({ notify, me }) {
   const list = useList("products/");
   const [search, setSearch] = useState("");
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [form, setForm] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -117,16 +128,50 @@ export function ProductsPage({ notify, me }) {
     }
   }
 
-  async function deactivate(row) {
-    if (!window.confirm(`Inativar ${row.name}?`)) return;
+  async function executePendingAction() {
+    if (!pendingAction) return;
+    const { type, row } = pendingAction;
+    setActionBusy(true);
     try {
-      await api.delete(`products/${row.id}/`);
-      notify("Produto inativado.");
+      if (type === "delete") {
+        await api.delete(`products/${row.id}/`);
+        notify("Produto excluído permanentemente.");
+      } else {
+        const activate = type === "activate";
+        await api.post(`products/${row.id}/${activate ? "activate" : "deactivate"}/`);
+        notify(`Produto ${activate ? "ativado" : "inativado"} com sucesso.`);
+      }
+      setPendingAction(null);
       list.reload();
     } catch (error) {
       notify(getError(error), "error");
+    } finally {
+      setActionBusy(false);
     }
   }
+
+  const confirmation = pendingAction && (() => {
+    const { type, row } = pendingAction;
+    if (type === "delete") {
+      return {
+        title: "Excluir produto permanentemente",
+        message: `Deseja realmente excluir “${row.name}”?`,
+        detail: "Esta ação é irreversível. A exclusão só será permitida quando o produto estiver sem estoque e sem vínculos com lotes, entradas, saídas, ajustes, inventários ou movimentações. Caso exista histórico, use Inativar.",
+        confirmLabel: "Excluir permanentemente",
+        confirmVariant: "danger",
+      };
+    }
+    const activate = type === "activate";
+    return {
+      title: activate ? "Ativar produto" : "Inativar produto",
+      message: `${activate ? "Ativar" : "Inativar"} “${row.name}”?`,
+      detail: activate
+        ? "O produto voltará a ficar disponível para novas operações."
+        : "O cadastro e todo o histórico serão preservados, mas o produto deixará de ficar disponível para novas operações.",
+      confirmLabel: activate ? "Ativar produto" : "Inativar produto",
+      confirmVariant: activate ? "success" : "warning",
+    };
+  })();
 
   return (
     <>
@@ -152,13 +197,25 @@ export function ProductsPage({ notify, me }) {
           onChange={(event) => list.setParams({ ...list.params, category: event.target.value, page: 1 })}
         >
           <option value="">Todas as categorias</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}{category.active ? "" : " (inativa)"}
+            </option>
+          ))}
+        </select>
+        <select
+          value={list.params.active ?? ""}
+          onChange={(event) => list.setParams({ ...list.params, active: event.target.value, page: 1 })}
+        >
+          <option value="">Ativos e inativos</option>
+          <option value="true">Somente ativos</option>
+          <option value="false">Somente inativos</option>
         </select>
         <select
           value={list.params.stock_level || ""}
           onChange={(event) => list.setParams({ ...list.params, stock_level: event.target.value, page: 1 })}
         >
-          <option value="">Todos os níveis</option>
+          <option value="">Todos os níveis de estoque</option>
           <option value="normal">Normal</option>
           <option value="low">Estoque baixo</option>
           <option value="out">Sem estoque</option>
@@ -186,14 +243,19 @@ export function ProductsPage({ notify, me }) {
             { key: "category_name", label: "Categoria" },
             { key: "stock", label: "Estoque", render: (row) => <strong>{fmtQty(row.stock)} UN</strong> },
             {
-              key: "level",
-              label: "Situação",
+              key: "active",
+              label: "Cadastro",
               render: (row) => (
-                <StatusBadge
-                  value={Number(row.stock) <= 0 ? "out" : row.low_stock ? "low" : "normal"}
-                  label={Number(row.stock) <= 0 ? "Sem estoque" : row.low_stock ? "Estoque baixo" : "Normal"}
-                />
+                <StatusBadge value={row.active ? "active" : "inactive"} label={row.active ? "Ativo" : "Inativo"} />
               ),
+            },
+            {
+              key: "level",
+              label: "Nível de estoque",
+              render: (row) => {
+                const [value, label] = stockLevel(row);
+                return <StatusBadge value={value} label={label} />;
+              },
             },
             { key: "cost_price", label: "Custo", render: (row) => fmtMoney(row.cost_price) },
             { key: "sale_price", label: "Venda", render: (row) => fmtMoney(row.sale_price) },
@@ -203,8 +265,25 @@ export function ProductsPage({ notify, me }) {
               label: "Ações",
               render: (row) => me.permissions.is_admin ? (
                 <div className="row-actions">
-                  <button onClick={() => editProduct(row)} aria-label={`Editar ${row.name}`}><Pencil size={16} /></button>
-                  <button className="danger" onClick={() => deactivate(row)} aria-label={`Inativar ${row.name}`}><Trash2 size={16} /></button>
+                  <button onClick={() => editProduct(row)} title="Editar produto" aria-label={`Editar ${row.name}`}>
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    className={row.active ? "warning" : "success"}
+                    onClick={() => setPendingAction({ type: row.active ? "deactivate" : "activate", row })}
+                    title={row.active ? "Inativar produto" : "Ativar produto"}
+                    aria-label={`${row.active ? "Inativar" : "Ativar"} ${row.name}`}
+                  >
+                    {row.active ? <PowerOff size={16} /> : <Power size={16} />}
+                  </button>
+                  <button
+                    className="danger"
+                    onClick={() => setPendingAction({ type: "delete", row })}
+                    title="Excluir permanentemente"
+                    aria-label={`Excluir permanentemente ${row.name}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ) : "-",
             },
@@ -227,14 +306,22 @@ export function ProductsPage({ notify, me }) {
             <Field label="Categoria" required>
               <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} required>
                 <option value="">Selecione</option>
-                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id} disabled={!category.active && Number(form.category) !== category.id}>
+                    {category.name}{category.active ? "" : " (inativa)"}
+                  </option>
+                ))}
               </select>
             </Field>
 
             <Field label="Fornecedor principal">
               <select value={form.supplier || ""} onChange={(event) => setForm({ ...form, supplier: event.target.value })}>
                 <option value="">Não informado</option>
-                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id} disabled={!supplier.active && Number(form.supplier) !== supplier.id}>
+                    {supplier.name}{supplier.active ? "" : " (inativo)"}
+                  </option>
+                ))}
               </select>
             </Field>
 
@@ -312,19 +399,21 @@ export function ProductsPage({ notify, me }) {
               <textarea value={form.description || ""} onChange={(event) => setForm({ ...form, description: event.target.value })} />
             </Field>
 
-            <Field label="Situação">
-              <select value={String(form.active)} onChange={(event) => setForm({ ...form, active: event.target.value === "true" })}>
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
-            </Field>
-
             <div className="form-actions full">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancelar</Button>
               <Button>Salvar produto</Button>
             </div>
           </form>
         </Modal>
+      )}
+
+      {confirmation && (
+        <ConfirmModal
+          {...confirmation}
+          busy={actionBusy}
+          onClose={() => setPendingAction(null)}
+          onConfirm={executePendingAction}
+        />
       )}
     </>
   );

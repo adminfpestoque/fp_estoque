@@ -97,7 +97,7 @@ function App() {
     alerts: <AlertsPage me={me} notify={notify} />,
     notifications: <NotificationsPage notify={notify} onChanged={loadNotifications} />,
     reports: <ReportsPage notify={notify} me={me} />,
-    users: <UsersPage notify={notify} />,
+    users: <UsersPage notify={notify} me={me} />,
     settings: <SettingsPage notify={notify} />,
   };
 
