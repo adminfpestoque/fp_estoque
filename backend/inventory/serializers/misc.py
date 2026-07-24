@@ -131,9 +131,28 @@ class AlertSerializer(serializers.ModelSerializer):
 
 class NotificationSerializer(serializers.ModelSerializer):
     level_display = serializers.CharField(source="get_level_display", read_only=True)
-    alert_type = serializers.CharField(source="alert.type", read_only=True)
-    alert_type_display = serializers.CharField(source="alert.get_type_display", read_only=True)
-    alert_active = serializers.BooleanField(source="alert.active", read_only=True)
+    alert_type = serializers.CharField(source="alert.type", read_only=True, allow_null=True)
+    alert_type_display = serializers.CharField(source="alert.get_type_display", read_only=True, allow_null=True)
+    alert_active = serializers.BooleanField(source="alert.active", read_only=True, allow_null=True)
+    product_name = serializers.CharField(source="alert.product.name", read_only=True, allow_null=True)
+    lot_number = serializers.CharField(source="alert.lot.number", read_only=True, allow_null=True)
+    inventory_number = serializers.CharField(source="alert.inventory.number", read_only=True, allow_null=True)
+    source_display = serializers.SerializerMethodField()
+    reference_display = serializers.SerializerMethodField()
+
+    def get_source_display(self, obj):
+        return obj.alert.get_type_display() if obj.alert_id else "Evento do sistema"
+
+    def get_reference_display(self, obj):
+        if not obj.alert_id:
+            return "Sistema"
+        if obj.alert.lot_id:
+            return f"{obj.alert.product.name} — lote {obj.alert.lot.number}"
+        if obj.alert.inventory_id:
+            return f"{obj.alert.product.name} — inventário {obj.alert.inventory.number}"
+        if obj.alert.product_id:
+            return obj.alert.product.name
+        return "Alerta de estoque"
 
     class Meta:
         model = Notification

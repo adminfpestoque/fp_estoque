@@ -5,10 +5,10 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
-from ..models import InventoryCount, InventoryItem, Product
+from ..models import Alert, InventoryCount, InventoryItem, Product
 from ..permissions import IsAdministrator
 from ..serializers import InventoryItemSerializer, InventorySerializer
-from ..services import audit, refresh_alerts
+from ..services import audit, notify_users, refresh_alerts
 from ..validators import parse_integer_quantity
 from .common import BaseViewSet, error_detail
 
@@ -82,6 +82,11 @@ class InventoryViewSet(BaseViewSet):
                 ]
             )
         audit(self.request.user, "CREATE", inventory, "Inventário iniciado.")
+        notify_users(
+            "Inventário iniciado",
+            f"O inventário {inventory.number} foi iniciado por {self.request.user.username}.",
+            level=Alert.INFO,
+        )
 
     def _record_item(self, inventory, payload, user):
         if inventory.status != InventoryCount.OPEN:
@@ -174,6 +179,11 @@ class InventoryViewSet(BaseViewSet):
         try:
             inventory.submit(request.user)
             audit(request.user, "SUBMIT", inventory, "Inventário enviado para confirmação.")
+            notify_users(
+                "Inventário aguardando confirmação",
+                f"O inventário {inventory.number} foi enviado para confirmação por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(inventory).data)
         except Exception as exc:
             if hasattr(exc, "messages"):
@@ -186,6 +196,11 @@ class InventoryViewSet(BaseViewSet):
         try:
             inventory.reopen()
             audit(request.user, "REOPEN", inventory, "Inventário reaberto para conferência.")
+            notify_users(
+                "Inventário reaberto",
+                f"O inventário {inventory.number} foi reaberto por {request.user.username}.",
+                level=Alert.INFO,
+            )
             return Response(self.get_serializer(inventory).data)
         except Exception as exc:
             if hasattr(exc, "messages"):
@@ -204,6 +219,11 @@ class InventoryViewSet(BaseViewSet):
                 inventory,
                 "Inventário concluído e divergências ajustadas.",
             )
+            notify_users(
+                "Inventário concluído",
+                f"O inventário {inventory.number} foi concluído e suas divergências foram processadas por {request.user.username}.",
+                level=Alert.INFO,
+            )
             return Response(self.get_serializer(inventory).data)
         except Exception as exc:
             if hasattr(exc, "messages"):
@@ -216,6 +236,11 @@ class InventoryViewSet(BaseViewSet):
         try:
             inventory.cancel(request.user, request.data.get("reason") or "")
             audit(request.user, "CANCEL", inventory, "Inventário cancelado.")
+            notify_users(
+                "Inventário cancelado",
+                f"O inventário {inventory.number} foi cancelado por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(inventory).data)
         except Exception as exc:
             if hasattr(exc, "messages"):

@@ -59,7 +59,8 @@ class DataGovernanceTests(TestCase):
 
         self.assertEqual(response.status_code, 409, response.data)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
-        self.assertIn("estoque", " ".join(response.data["vinculos"]))
+        self.assertIn("stock", [item["code"] for item in response.data["blockers"]])
+        self.assertTrue(response.data["can_deactivate"])
 
     def test_product_with_history_cannot_be_permanently_deleted(self):
         product = self.create_product()
@@ -69,7 +70,7 @@ class DataGovernanceTests(TestCase):
 
         self.assertEqual(response.status_code, 409, response.data)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
-        self.assertIn("lotes", response.data["vinculos"])
+        self.assertIn("lots", [item["code"] for item in response.data["blockers"]])
 
     def test_governance_records_cannot_be_deleted(self):
         category_response = self.client.delete(f"/api/categories/{self.category.id}/")

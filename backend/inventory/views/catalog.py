@@ -171,20 +171,37 @@ class ProductViewSet(BaseViewSet):
     def _deletion_blockers(product):
         blockers = []
         if product.stock > 0:
-            blockers.append(f"estoque atual de {int(product.stock)} unidade(s)")
+            blockers.append(
+                {
+                    "code": "stock",
+                    "label": "Estoque atual",
+                    "count": int(product.stock),
+                    "description": f"{int(product.stock)} unidade(s) em estoque",
+                }
+            )
 
         relations = [
-            ("lots", "lotes"),
-            ("movements", "movimentações"),
-            ("entry_items", "entradas"),
-            ("output_items", "saídas"),
-            ("adjustments", "ajustes"),
-            ("inventory_items", "inventários"),
+            ("lots", "lots", "Lotes"),
+            ("movements", "movements", "Movimentações"),
+            ("entry_items", "entries", "Entradas"),
+            ("output_items", "outputs", "Saídas"),
+            ("adjustments", "adjustments", "Ajustes"),
+            ("inventory_items", "inventories", "Inventários"),
         ]
-        for relation, label in relations:
+        for relation, code, label in relations:
             manager = getattr(product, relation, None)
-            if manager is not None and manager.exists():
-                blockers.append(label)
+            if manager is None:
+                continue
+            count = manager.count()
+            if count:
+                blockers.append(
+                    {
+                        "code": code,
+                        "label": label,
+                        "count": count,
+                        "description": f"{count} registro(s) em {label.lower()}",
+                    }
+                )
         return blockers
 
     def destroy(self, request, *args, **kwargs):
@@ -194,10 +211,11 @@ class ProductViewSet(BaseViewSet):
             return Response(
                 {
                     "detail": (
-                        "Este produto não pode ser excluído permanentemente porque possui "
-                        "estoque ou vínculos históricos. Inative-o para preservar a rastreabilidade."
+                        "Este produto possui dados históricos e não pode ser excluído permanentemente. "
+                        "Esses registros precisam ser preservados para manter a rastreabilidade do estoque."
                     ),
-                    "vinculos": blockers,
+                    "blockers": blockers,
+                    "can_deactivate": product.active,
                 },
                 status=status.HTTP_409_CONFLICT,
             )

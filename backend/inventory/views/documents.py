@@ -5,10 +5,10 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 
-from ..models import Movement, StockAdjustment, StockEntry, StockOutput
+from ..models import Alert, Movement, StockAdjustment, StockEntry, StockOutput
 from ..permissions import IsAdministrator, IsInventoryUser
 from ..serializers import MovementSerializer, StockAdjustmentSerializer, StockEntrySerializer, StockOutputSerializer
-from ..services import audit, refresh_alerts
+from ..services import audit, notify_users, refresh_alerts
 from .common import BaseViewSet, error_detail
 
 
@@ -26,6 +26,11 @@ class StockEntryViewSet(BaseViewSet):
             entry.confirm(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CONFIRM", entry, f"Entrada {entry.number} confirmada.")
+            notify_users(
+                "Entrada confirmada",
+                f"A entrada {entry.number} do fornecedor {entry.supplier} foi confirmada por {request.user.username}.",
+                level=Alert.INFO,
+            )
             return Response(self.get_serializer(entry).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -37,6 +42,11 @@ class StockEntryViewSet(BaseViewSet):
             entry.cancel(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CANCEL", entry, f"Entrada {entry.number} cancelada e estornada.")
+            notify_users(
+                "Entrada cancelada",
+                f"A entrada {entry.number} foi cancelada e o estoque correspondente foi estornado por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(entry).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -56,6 +66,11 @@ class StockOutputViewSet(BaseViewSet):
             output.confirm(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CONFIRM", output, f"Saída {output.number} confirmada.")
+            notify_users(
+                "Saída confirmada",
+                f"A saída {output.number} foi confirmada por {request.user.username}.",
+                level=Alert.INFO,
+            )
             return Response(self.get_serializer(output).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -67,6 +82,11 @@ class StockOutputViewSet(BaseViewSet):
             output.cancel(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CANCEL", output, f"Saída {output.number} cancelada e estornada.")
+            notify_users(
+                "Saída cancelada",
+                f"A saída {output.number} foi cancelada e o estoque correspondente foi devolvido por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(output).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -99,6 +119,11 @@ class MovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
             reversal = Movement.reverse(original=movement, user=request.user, reason=request.data.get("reason") or "Estorno manual")
             refresh_alerts(notify=True)
             audit(request.user, "REVERSE", movement, f"Movimentação #{movement.pk} estornada.")
+            notify_users(
+                "Movimentação estornada",
+                f"A movimentação #{movement.pk} de {movement.product.name} foi estornada por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(reversal).data, status=201)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -119,6 +144,11 @@ class StockAdjustmentViewSet(BaseViewSet):
             adjustment.confirm(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CONFIRM", adjustment, f"Ajuste {adjustment.number} confirmado.")
+            notify_users(
+                "Ajuste de estoque confirmado",
+                f"O ajuste {adjustment.number} de {adjustment.product.name} foi confirmado por {request.user.username}.",
+                level=Alert.WARNING,
+            )
             return Response(self.get_serializer(adjustment).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)
@@ -130,6 +160,11 @@ class StockAdjustmentViewSet(BaseViewSet):
             adjustment.cancel(request.user)
             refresh_alerts(notify=True)
             audit(request.user, "CANCEL", adjustment, f"Ajuste {adjustment.number} cancelado.")
+            notify_users(
+                "Ajuste de estoque cancelado",
+                f"O ajuste {adjustment.number} foi cancelado por {request.user.username}.",
+                level=Alert.INFO,
+            )
             return Response(self.get_serializer(adjustment).data)
         except DjangoValidationError as exc:
             return Response({"detail": error_detail(exc)}, status=400)

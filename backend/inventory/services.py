@@ -39,7 +39,13 @@ def _notification_users():
     )
 
 
-def _notify_alert(alert, users):
+def _notify_alert(alert, users, *, force_unread=False):
+    """Ensure every active user has one notification for the alert.
+
+    Missing notifications are backfilled. A notification that the user already read is
+    only reopened when the alert content or severity changes, or when the caller
+    explicitly requests a new announcement.
+    """
     now = timezone.now()
     title = alert.get_type_display()
     for user in users:
@@ -54,30 +60,45 @@ def _notify_alert(alert, users):
         )
         if created:
             continue
-        changed = (
+
+        content_changed = (
             notification.title != title
             or notification.message != alert.message
             or notification.level != alert.level
-            or notification.read
-            or notification.read_at is not None
         )
-        if changed:
-            notification.title = title
-            notification.message = alert.message
-            notification.level = alert.level
-            notification.read = False
-            notification.read_at = None
-            notification.updated_at = now
-            notification.save(
-                update_fields=[
-                    "title",
-                    "message",
-                    "level",
-                    "read",
-                    "read_at",
-                    "updated_at",
-                ]
-            )
+        if not content_changed and not force_unread:
+            continue
+
+        notification.title = title
+        notification.message = alert.message
+        notification.level = alert.level
+        notification.read = False
+        notification.read_at = None
+        notification.updated_at = now
+        notification.save(
+            update_fields=[
+                "title",
+                "message",
+                "level",
+                "read",
+                "read_at",
+                "updated_at",
+            ]
+        )
+
+
+def notify_users(title, message, *, level=Alert.INFO, users=None):
+    """Create a general system notification for all active inventory users."""
+    recipients = list(users) if users is not None else list(_notification_users())
+    return [
+        Notification.objects.create(
+            user=user,
+            title=str(title),
+            message=str(message),
+            level=level,
+        )
+        for user in recipients
+    ]
 
 
 def _build_alert_candidates():
@@ -187,6 +208,11 @@ def refresh_alerts(notify=True):
 
     if duplicate_ids:
         Alert.objects.filter(pk__in=duplicate_ids).update(active=False, resolved_at=now)
+        Notification.objects.filter(alert_id__in=duplicate_ids, read=False).update(
+            read=True,
+            read_at=now,
+            updated_at=now,
+        )
 
     users = list(_notification_users()) if notify else []
     synchronized = []
@@ -220,8 +246,8 @@ def refresh_alerts(notify=True):
                 should_notify = True
 
         synchronized.append(alert)
-        if notify and should_notify:
-            _notify_alert(alert, users)
+        if notify:
+            _notify_alert(alert, users, force_unread=should_notify)
 
     stale_ids = [
         alert.pk
@@ -230,5 +256,10 @@ def refresh_alerts(notify=True):
     ]
     if stale_ids:
         Alert.objects.filter(pk__in=stale_ids).update(active=False, resolved_at=now)
+        Notification.objects.filter(alert_id__in=stale_ids, read=False).update(
+            read=True,
+            read_at=now,
+            updated_at=now,
+        )
 
     return synchronized

@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from rest_framework import mixins, viewsets
@@ -57,16 +58,34 @@ class NotificationViewSet(
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user).select_related("alert")
+        queryset = (
+            Notification.objects.filter(user=self.request.user)
+            .select_related("alert", "alert__product", "alert__lot", "alert__inventory")
+        )
+        alert_active = self.request.query_params.get("alert_active")
+        if alert_active == "true":
+            queryset = queryset.filter(Q(alert__active=True) | Q(alert__isnull=True))
+        elif alert_active == "false":
+            queryset = queryset.filter(alert__active=False)
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        refresh_alerts(notify=True)
+        return super().list(request, *args, **kwargs)
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
+        refresh_alerts(notify=True)
         queryset = self.get_queryset()
         recent = queryset[:8]
         return Response(
             {
                 "unread_count": queryset.filter(read=False).count(),
+                "read_count": queryset.filter(read=True).count(),
                 "total": queryset.count(),
+                "active_alerts": queryset.filter(alert__active=True).count(),
+                "resolved_alerts": queryset.filter(alert__active=False).count(),
+                "system_events": queryset.filter(alert__isnull=True).count(),
                 "recent": self.get_serializer(recent, many=True).data,
             }
         )

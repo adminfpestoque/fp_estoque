@@ -107,3 +107,60 @@ class NotificationTests(TestCase):
         self.assertEqual(cleared.status_code, 200, cleared.data)
         self.assertFalse(Notification.objects.filter(pk=operator_notice.pk).exists())
         self.assertTrue(Notification.objects.filter(pk=admin_notice.pk).exists())
+
+    def test_summary_backfills_missing_notifications_without_reopening_read_items(self):
+        refresh_alerts(notify=False)
+        self.assertEqual(Notification.objects.count(), 0)
+
+        self.client.force_authenticate(self.operator)
+        first_summary = self.client.get("/api/notifications/summary/")
+        self.assertEqual(first_summary.status_code, 200, first_summary.data)
+        self.assertEqual(first_summary.data["unread_count"], 1)
+        self.assertEqual(first_summary.data["active_alerts"], 1)
+        self.assertEqual(Notification.objects.count(), 2)
+
+        operator_notice = Notification.objects.get(user=self.operator)
+        self.client.post(f"/api/notifications/{operator_notice.id}/mark_read/")
+
+        unchanged_summary = self.client.get("/api/notifications/summary/")
+        self.assertEqual(unchanged_summary.status_code, 200, unchanged_summary.data)
+        self.assertEqual(unchanged_summary.data["unread_count"], 0)
+        operator_notice.refresh_from_db()
+        self.assertTrue(operator_notice.read)
+
+        self.product.stock = Decimal("1")
+        self.product.save(update_fields=["stock"])
+        changed_summary = self.client.get("/api/notifications/summary/")
+        self.assertEqual(changed_summary.data["unread_count"], 1)
+        operator_notice.refresh_from_db()
+        self.assertFalse(operator_notice.read)
+        self.assertIn("1 unidade", operator_notice.message)
+
+        self.product.stock = Decimal("10")
+        self.product.save(update_fields=["stock"])
+        resolved_summary = self.client.get("/api/notifications/summary/")
+        self.assertEqual(resolved_summary.data["unread_count"], 0)
+        self.assertEqual(resolved_summary.data["resolved_alerts"], 1)
+        operator_notice.refresh_from_db()
+        self.assertTrue(operator_notice.read)
+        self.assertIsNotNone(operator_notice.read_at)
+
+    def test_general_system_notifications_are_visible_and_user_scoped(self):
+        from .services import notify_users
+
+        created = notify_users(
+            "Entrada confirmada",
+            "A entrada ENT-001 foi confirmada.",
+            level=Alert.INFO,
+        )
+        self.assertEqual(len(created), 2)
+
+        self.client.force_authenticate(self.operator)
+        response = self.client.get("/api/notifications/?alert_active=true&search=Entrada%20confirmada")
+        self.assertEqual(response.status_code, 200, response.data)
+        items = response.data["results"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["title"], "Entrada confirmada")
+        self.assertEqual(items[0]["source_display"], "Evento do sistema")
+        self.assertEqual(items[0]["reference_display"], "Sistema")
+        self.assertIsNone(items[0]["alert"])
