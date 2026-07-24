@@ -514,7 +514,7 @@ export function InventoriesPage({ me, notify }) {
                             className="table-input"
                             type="number"
                             min="0"
-                            step="0.001"
+                            step="1"
                             disabled={!editable}
                             value={draft?.counted_quantity ?? ""}
                             onChange={(event) => updateDraft(item.id, {

@@ -73,21 +73,81 @@ api.interceptors.response.use(
 );
 
 export const unwrap = (payload) => payload?.results || payload || [];
-export const fmtMoney = (value) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-export const fmtQty = (value) => Number(value || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
-export const fmtDate = (value, withTime = true) => value ? new Date(value).toLocaleString("pt-BR", withTime ? {} : { dateStyle: "short" }) : "-";
-export const today = () => new Date().toISOString().slice(0, 10);
+
+export function parseLocalizedNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  let text = String(value ?? "").trim().replace(/\s/g, "");
+  if (!text) return 0;
+  if (text.includes(",") && text.includes(".")) {
+    text = text.lastIndexOf(",") > text.lastIndexOf(".")
+      ? text.replace(/\./g, "").replace(",", ".")
+      : text.replace(/,/g, "");
+  } else if (text.includes(",")) {
+    text = text.replace(",", ".");
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export const fmtMoney = (value) => parseLocalizedNumber(value).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+export const fmtQty = (value) => Math.trunc(parseLocalizedNumber(value)).toLocaleString("pt-BR", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+export const formatMoneyInput = (value) => parseLocalizedNumber(value).toFixed(2).replace(".", ",");
+
+function dateFromValue(value) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    const [year, month, day] = String(value).split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export const fmtDate = (value, withTime = true) => {
+  const parsed = dateFromValue(value);
+  if (!parsed) return "-";
+  return parsed.toLocaleString("pt-BR", withTime ? {} : { dateStyle: "short" });
+};
+
+export const today = () => {
+  const date = new Date();
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+};
+
+export const toLocalDateTimeInput = (value = new Date()) => {
+  const date = dateFromValue(value) || new Date();
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+};
+
+function flattenError(value, prefix = "") {
+  if (value == null) return [];
+  if (typeof value === "string" || typeof value === "number") {
+    return [`${prefix ? `${prefix}: ` : ""}${value}`];
+  }
+  if (Array.isArray(value)) return value.flatMap((item) => flattenError(item, prefix));
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .filter(([key]) => key !== "status_code")
+      .flatMap(([key, item]) => flattenError(item, key === "non_field_errors" ? prefix : key));
+  }
+  return [String(value)];
+}
 
 export function getError(error) {
   const data = error?.response?.data;
   if (!data) return "Não foi possível concluir a operação.";
-  if (typeof data === "string") return data;
-  if (Array.isArray(data)) return data.join(" ");
-  if (data.detail) return Array.isArray(data.detail) ? data.detail.join(" ") : String(data.detail);
-  return Object.entries(data)
-    .filter(([key]) => key !== "status_code")
-    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(" ") : value}`)
-    .join(" • ");
+  const messages = flattenError(data);
+  return messages.length ? messages.join(" • ") : "Não foi possível concluir a operação.";
 }
 
 export function Logo({ compact = false }) {

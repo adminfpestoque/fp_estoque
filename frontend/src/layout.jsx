@@ -1,4 +1,29 @@
-import { React, useEffect, useMemo, useState, api, unwrap, fmtMoney, fmtQty, fmtDate, today, getError, Logo, Button, Modal, Toast, Field, EmptyState, Pagination, DataTable, StatusBadge, AlertTriangle, Archive, ArrowDownToLine, ArrowUpFromLine, BarChart3, Bell, Boxes, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Eye, EyeOff, FileDown, FileText, Gauge, History, Layers3, LogOut, Menu, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Trash2, Truck, UserCog, Users, Warehouse, X, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "./shared.jsx";
+import {
+  React,
+  useState,
+  fmtDate,
+  Logo,
+  StatusBadge,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Bell,
+  Boxes,
+  Check,
+  ClipboardCheck,
+  FileText,
+  Gauge,
+  History,
+  Layers3,
+  LogOut,
+  Menu,
+  Package,
+  RefreshCw,
+  Settings,
+  SlidersHorizontal,
+  Truck,
+  Users,
+} from "./shared.jsx";
 
 const menuItems = [
   ["dashboard", Gauge, "Dashboard", null, "Controle interno • dados em tempo real"],
@@ -12,17 +37,35 @@ const menuItems = [
   ["adjustments", SlidersHorizontal, "Ajustes", "admin", "Correções autorizadas com justificativa obrigatória e histórico auditável."],
   ["inventories", ClipboardCheck, "Inventários", null, "Conte os produtos, identifique sobras e faltas e gere os ajustes com rastreabilidade."],
   ["alerts", AlertTriangle, "Alertas", null, "Estoque mínimo, falta de produtos, validade e divergências."],
+  ["notifications", Bell, "Notificações", null, "Acompanhe avisos novos e o histórico de notificações."],
   ["reports", FileText, "Relatórios", null, "Visualize os dados reais do banco antes de exportar em PDF ou Excel (XLSX)."],
   ["users", Users, "Usuários", "admin", "Cadastre usuários e defina diretamente o perfil de acesso de cada pessoa."],
   ["settings", Settings, "Configurações", "admin", "Parâmetros administrativos do estoque e dos alertas."],
 ];
 
-export function Shell({ me, page, setPage, onLogout, children, notifications, onRefreshNotifications }) {
+export function Shell({
+  me,
+  page,
+  setPage,
+  onLogout,
+  children,
+  notifications,
+  unreadNotifications = 0,
+  onRefreshNotifications,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const visibleItems = menuItems.filter((item) => item[3] !== "admin" || me?.permissions?.is_admin);
   const currentPage = menuItems.find(([id]) => id === page);
+
+  function navigate(id) {
+    setPage(id);
+    setMobileOpen(false);
+    setShowNotifications(false);
+  }
 
   return (
     <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -33,7 +76,7 @@ export function Shell({ me, page, setPage, onLogout, children, notifications, on
         </div>
         <nav>
           {visibleItems.map(([id, Icon, label]) => (
-            <button key={id} className={page === id ? "active" : ""} onClick={() => { setPage(id); setMobileOpen(false); }} title={collapsed ? label : undefined}>
+            <button key={id} className={page === id ? "active" : ""} onClick={() => navigate(id)} title={collapsed ? label : undefined}>
               <Icon size={19} /> {!collapsed && <span>{label}</span>}
             </button>
           ))}
@@ -50,26 +93,43 @@ export function Shell({ me, page, setPage, onLogout, children, notifications, on
           </div>
           <div className="topbar-actions">
             <div className="notification-wrap">
-              <button className="icon-btn bell" onClick={() => setShowNotifications(!showNotifications)}>
+              <button className="icon-btn bell" onClick={() => setShowNotifications(!showNotifications)} aria-label="Abrir notificações">
                 <Bell size={20} />
-                {notifications?.filter((n) => !n.read).length > 0 && <span>{notifications.filter((n) => !n.read).length}</span>}
+                {unreadNotifications > 0 && <span>{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
               </button>
               {showNotifications && (
                 <div className="notification-popover">
-                  <div className="popover-header"><strong>Notificações</strong><button onClick={onRefreshNotifications}><RefreshCw size={15} /></button></div>
-                  {notifications?.length ? notifications.slice(0, 8).map((n) => (
-                    <div key={n.id} className={`notification-item ${n.read ? "read" : ""}`}>
-                      <StatusBadge value={n.level} label={n.title} />
-                      <p>{n.message}</p>
-                      <small>{fmtDate(n.created_at)}</small>
+                  <div className="popover-header">
+                    <strong>Notificações</strong>
+                    <div className="popover-actions">
+                      {unreadNotifications > 0 && (
+                        <button onClick={onMarkAllNotificationsRead} title="Marcar todas como lidas"><Check size={15} /></button>
+                      )}
+                      <button onClick={onRefreshNotifications} title="Atualizar"><RefreshCw size={15} /></button>
                     </div>
+                  </div>
+                  {notifications?.length ? notifications.map((notification) => (
+                    <button
+                      type="button"
+                      key={notification.id}
+                      className={`notification-item ${notification.read ? "read" : "unread"}`}
+                      onClick={() => onMarkNotificationRead?.(notification)}
+                    >
+                      <StatusBadge value={notification.level} label={notification.title} />
+                      <p>{notification.message}</p>
+                      <small>{fmtDate(notification.created_at)}</small>
+                    </button>
                   )) : <p className="muted padded">Nenhuma notificação.</p>}
+                  <button className="notification-see-all" onClick={() => navigate("notifications")}>Ver todas as notificações</button>
                 </div>
               )}
             </div>
             <div className="user-chip">
               <div>{(me?.profile?.full_name || me?.username || "U").slice(0, 1).toUpperCase()}</div>
-              <span><strong>{me?.profile?.full_name || me?.username}</strong><small>{me?.permissions?.role === "ADMIN" ? "Administrador" : "Operador"}</small></span>
+              <span>
+                <strong>{me?.profile?.full_name || me?.username}</strong>
+                <small>{me?.permissions?.role === "ADMIN" ? "Administrador" : "Operador"}</small>
+              </span>
             </div>
           </div>
         </header>
@@ -81,11 +141,7 @@ export function Shell({ me, page, setPage, onLogout, children, notifications, on
 
 export function PageHeader({ actions }) {
   if (!actions) return null;
-  return (
-    <div className="page-header page-header-actions-only">
-      <div className="page-actions">{actions}</div>
-    </div>
-  );
+  return <div className="page-header page-header-actions-only"><div className="page-actions">{actions}</div></div>;
 }
 
 export function MetricCard({ label, value, icon: Icon, tone = "default", detail }) {

@@ -52,3 +52,14 @@
 .metric-danger .metric-icon { background: #fee2e2; color: var(--danger); }
 .metric-success .metric-icon { background: #dcfce7; color: var(--success); }
 .metric-gold .metric-icon { background: var(--gold); color: #111; }
+
+.popover-actions { display: flex; gap: 5px; }
+.notification-item { width: 100%; border: 0; background: white; text-align: left; cursor: pointer; position: relative; }
+.notification-item:hover { background: #fffaf0; }
+.notification-item.unread::before { content: ""; position: absolute; left: 4px; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--gold-dark); }
+.notification-see-all { width: 100%; border: 0; background: #f8f8f8; padding: 11px 14px; color: #7a5900; font-weight: 800; }
+.notification-see-all:hover { background: #fff3c4; }
+.notification-table-message { display: grid; gap: 4px; min-width: 280px; }
+.notification-table-message span { color: #444; line-height: 1.4; }
+.notification-table-message.read { opacity: .65; }
+.notification-filters { justify-content: flex-start; }
