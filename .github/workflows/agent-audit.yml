@@ -1,0 +1,77 @@
+name: Agent repository audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create source snapshot
+        run: tar --exclude=.git -czf /tmp/fp-estoque-source.tar.gz .
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: fp-estoque-source
+          path: /tmp/fp-estoque-source.tar.gz
+          retention-days: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        id: backend_install
+        continue-on-error: true
+        working-directory: backend
+        run: pip install -r requirements.txt 2>&1 | tee ../backend-install.log
+
+      - name: Run backend tests
+        if: steps.backend_install.outcome == 'success'
+        continue-on-error: true
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: 'true'
+        run: python manage.py test inventory -v 2 2>&1 | tee ../backend-tests.log
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        id: frontend_install
+        continue-on-error: true
+        working-directory: frontend
+        run: npm ci 2>&1 | tee ../frontend-install.log
+
+      - name: Build frontend
+        if: steps.frontend_install.outcome == 'success'
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run build 2>&1 | tee ../frontend-build.log
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-validation-logs
+          path: |
+            backend-install.log
+            backend-tests.log
+            frontend-install.log
+            frontend-build.log
+          if-no-files-found: ignore
+          retention-days: 1
