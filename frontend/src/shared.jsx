@@ -329,10 +329,10 @@ export function Pagination({ page, count, pageSize = 20, onChange }) {
   return <div className="pagination"><button disabled={page <= 1} onClick={() => onChange(page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button disabled={page >= pages} onClick={() => onChange(page + 1)}>Próxima</button></div>;
 }
 
-export function DataTable({ columns, rows, loading, emptyText, rowKey = "id" }) {
+export function DataTable({ columns, rows, loading, emptyText, rowKey = "id", rowClassName }) {
   if (loading) return <div className="loading"><RefreshCw className="spin" /> Carregando...</div>;
   if (!rows?.length) return <EmptyState text={emptyText} />;
-  return <div className="table-wrap"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row[rowKey] ?? index}>{columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key] ?? "-"}</td>)}</tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr className={rowClassName ? rowClassName(row) : ""} key={row[rowKey] ?? index}>{columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key] ?? "-"}</td>)}</tr>)}</tbody></table></div>;
 }
 
 export function StatusBadge({ value, label }) {
