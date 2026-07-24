@@ -24,7 +24,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .agent-payload/document-history.b64 > /tmp/document-history-fixes.tar.gz
+          cat \
+            .agent-payload/document-history.b64 \
+            .agent-payload/document-history.part01 \
+            .agent-payload/document-history.part02 \
+            .agent-payload/document-history.part03 \
+            .agent-payload/document-history.part04 \
+            .agent-payload/document-history.part05 \
+            .agent-payload/document-history.part06 \
+            .agent-payload/document-history.part07 \
+            .agent-payload/document-history.part08 \
+            .agent-payload/document-history.part09 \
+            > /tmp/document-history-fixes.b64
+          echo "ece624acffa3432df572ddf3baa952fbccc12fe359b66e3483dc4a18b38a7a70  /tmp/document-history-fixes.b64" | sha256sum --check
+          base64 --decode /tmp/document-history-fixes.b64 > /tmp/document-history-fixes.tar.gz
           echo "abfde56608922fadfb8ca2bbb777ce3b878a75bbf5583d7420b5b328e6a84fed  /tmp/document-history-fixes.tar.gz" | sha256sum --check
           mkdir -p /tmp/document-history-fixes
           tar -xzf /tmp/document-history-fixes.tar.gz -C /tmp/document-history-fixes
