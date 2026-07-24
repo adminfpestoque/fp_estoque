@@ -55,7 +55,14 @@ jobs:
 
       - name: Run backend tests
         working-directory: backend
-        run: python manage.py test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python manage.py test > /tmp/backend-tests.log 2>&1; then
+            tail -n 180 /tmp/backend-tests.log
+            exit 1
+          fi
+          tail -n 40 /tmp/backend-tests.log
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
