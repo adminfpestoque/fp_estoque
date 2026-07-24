@@ -45,7 +45,7 @@ export function DocumentPage({ type, notify, me }) {
 
   useEffect(() => {
     Promise.all([
-      api.get("products/?page_size=500"),
+      api.get("products/?page_size=500&deleted=false"),
       api.get("suppliers/?page_size=500&active=true"),
       api.get("lots/?page_size=500"),
     ]).then(([productResponse, supplierResponse, lotResponse]) => {

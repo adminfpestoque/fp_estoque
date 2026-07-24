@@ -54,7 +54,7 @@ function stockLevel(row) {
 }
 
 export function ProductsPage({ notify, me }) {
-  const list = useList("products/");
+  const list = useList("products/", { deleted: "all" });
   const [search, setSearch] = useState("");
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -78,6 +78,7 @@ export function ProductsPage({ notify, me }) {
   }, []);
 
   function editProduct(row) {
+    if (row.is_deleted) return;
     setForm({
       id: row.id,
       name: row.name || "",
@@ -134,8 +135,10 @@ export function ProductsPage({ notify, me }) {
     setActionBusy(true);
     try {
       if (type === "delete") {
-        await api.delete(`products/${row.id}/`);
-        notify("Produto excluído permanentemente.");
+        await api.delete(`products/${row.id}/`, {
+          data: { reason: "Exclusão solicitada pelo usuário" },
+        });
+        notify("Produto excluído do uso operacional e mantido no histórico.");
       } else if (type === "blocked" && !pendingAction.canDeactivate) {
         setPendingAction(null);
         return;
@@ -152,7 +155,7 @@ export function ProductsPage({ notify, me }) {
         setPendingAction({
           type: "blocked",
           row,
-          message: data.detail || "Este produto possui histórico e não pode ser excluído permanentemente.",
+          message: data.detail || "Este produto ainda possui vínculos operacionais e não pode ser excluído.",
           blockers: data.blockers || data.vinculos || [],
           canDeactivate: data.can_deactivate ?? row.active,
         });
@@ -168,10 +171,10 @@ export function ProductsPage({ notify, me }) {
     const { type, row } = pendingAction;
     if (type === "delete") {
       return {
-        title: "Excluir produto permanentemente",
-        message: `Deseja realmente excluir “${row.name}”?`,
-        detail: "Esta ação é irreversível. A exclusão só será permitida quando o produto estiver sem estoque e sem vínculos com lotes, entradas, saídas, ajustes, inventários ou movimentações.",
-        confirmLabel: "Excluir permanentemente",
+        title: "Excluir produto",
+        message: `Deseja excluir “${row.name}”?`,
+        detail: "O produto deixará de ser utilizado em novas operações, mas continuará visível em cinza como Excluído para preservar o histórico. A exclusão só será permitida quando não houver estoque nem vínculos operacionais pendentes.",
+        confirmLabel: "Excluir produto",
         confirmVariant: "danger",
       };
     }
@@ -205,6 +208,32 @@ export function ProductsPage({ notify, me }) {
     };
   })();
 
+  const productStatusFilter = list.params.deleted === "true"
+    ? "DELETED"
+    : list.params.active === "true"
+      ? "ACTIVE"
+      : list.params.active === "false" && list.params.deleted !== "all"
+        ? "INACTIVE"
+        : "";
+
+  function changeProductStatus(value) {
+    const next = { ...list.params, page: 1 };
+    if (value === "DELETED") {
+      next.deleted = "true";
+      delete next.active;
+    } else if (value === "ACTIVE") {
+      next.deleted = "false";
+      next.active = "true";
+    } else if (value === "INACTIVE") {
+      next.deleted = "false";
+      next.active = "false";
+    } else {
+      next.deleted = "all";
+      delete next.active;
+    }
+    list.setParams(next);
+  }
+
   return (
     <>
       <PageHeader
@@ -236,12 +265,13 @@ export function ProductsPage({ notify, me }) {
           ))}
         </select>
         <select
-          value={list.params.active ?? ""}
-          onChange={(event) => list.setParams({ ...list.params, active: event.target.value, page: 1 })}
+          value={productStatusFilter}
+          onChange={(event) => changeProductStatus(event.target.value)}
         >
-          <option value="">Ativos e inativos</option>
-          <option value="true">Somente ativos</option>
-          <option value="false">Somente inativos</option>
+          <option value="">Todos os cadastros</option>
+          <option value="ACTIVE">Somente ativos</option>
+          <option value="INACTIVE">Somente inativos</option>
+          <option value="DELETED">Somente excluídos</option>
         </select>
         <select
           value={list.params.stock_level || ""}
@@ -258,6 +288,7 @@ export function ProductsPage({ notify, me }) {
         <DataTable
           loading={list.loading}
           rows={list.rows}
+          rowClassName={(row) => row.is_deleted ? "row-soft-deleted" : (!row.active ? "inactive-row" : "")}
           columns={[
             {
               key: "name",
@@ -268,6 +299,7 @@ export function ProductsPage({ notify, me }) {
                   <span>
                     <strong>{row.name}</strong>
                     <small>{productSubtitle(row)}</small>
+                    {row.is_deleted && <small className="muted-text">Mantido somente para histórico</small>}
                   </span>
                 </div>
               ),
@@ -277,14 +309,15 @@ export function ProductsPage({ notify, me }) {
             {
               key: "active",
               label: "Cadastro",
-              render: (row) => (
-                <StatusBadge value={row.active ? "active" : "inactive"} label={row.active ? "Ativo" : "Inativo"} />
-              ),
+              render: (row) => row.is_deleted
+                ? <StatusBadge value="DELETED" label="Excluído" />
+                : <StatusBadge value={row.active ? "active" : "inactive"} label={row.active ? "Ativo" : "Inativo"} />,
             },
             {
               key: "level",
               label: "Nível de estoque",
               render: (row) => {
+                if (row.is_deleted) return <StatusBadge value="DELETED" label="Histórico" />;
                 const [value, label] = stockLevel(row);
                 return <StatusBadge value={value} label={label} />;
               },
@@ -295,29 +328,33 @@ export function ProductsPage({ notify, me }) {
             {
               key: "actions",
               label: "Ações",
-              render: (row) => me.permissions.is_admin ? (
-                <div className="row-actions">
-                  <button onClick={() => editProduct(row)} title="Editar produto" aria-label={`Editar ${row.name}`}>
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    className={row.active ? "warning" : "success"}
-                    onClick={() => setPendingAction({ type: row.active ? "deactivate" : "activate", row })}
-                    title={row.active ? "Inativar produto" : "Ativar produto"}
-                    aria-label={`${row.active ? "Inativar" : "Ativar"} ${row.name}`}
-                  >
-                    {row.active ? <PowerOff size={16} /> : <Power size={16} />}
-                  </button>
-                  <button
-                    className="danger"
-                    onClick={() => setPendingAction({ type: "delete", row })}
-                    title="Excluir permanentemente"
-                    aria-label={`Excluir permanentemente ${row.name}`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ) : "-",
+              render: (row) => {
+                if (row.is_deleted) return <span className="muted-text">Histórico</span>;
+                if (!me.permissions.is_admin) return "-";
+                return (
+                  <div className="row-actions">
+                    <button onClick={() => editProduct(row)} title="Editar produto" aria-label={`Editar ${row.name}`}>
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      className={row.active ? "warning" : "success"}
+                      onClick={() => setPendingAction({ type: row.active ? "deactivate" : "activate", row })}
+                      title={row.active ? "Inativar produto" : "Ativar produto"}
+                      aria-label={`${row.active ? "Inativar" : "Ativar"} ${row.name}`}
+                    >
+                      {row.active ? <PowerOff size={16} /> : <Power size={16} />}
+                    </button>
+                    <button
+                      className="danger"
+                      onClick={() => setPendingAction({ type: "delete", row })}
+                      title="Excluir produto e manter no histórico"
+                      aria-label={`Excluir ${row.name}`}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              },
             },
           ]}
         />
