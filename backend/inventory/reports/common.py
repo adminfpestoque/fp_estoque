@@ -57,6 +57,8 @@ def movement_queryset(params):
         qs = qs.filter(
             Q(product__name__icontains=search)
             | Q(product__code__icontains=search)
+            | Q(product_name_snapshot__icontains=search)
+            | Q(product_code_snapshot__icontains=search)
             | Q(reason__icontains=search)
             | Q(document__icontains=search)
         )

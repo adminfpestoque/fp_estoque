@@ -46,9 +46,9 @@ def daily_data(params, user):
         rows.append({
             "time": timezone.localtime(movement.created_at).strftime("%d/%m/%Y %H:%M"),
             "type": movement.get_type_display(),
-            "product": movement.product.name,
-            "code": movement.product.code,
-            "category": movement.product.category.name,
+            "product": movement.product_name,
+            "code": movement.product_code,
+            "category": movement.category_name,
             "lot": movement.lot.number if movement.lot else "-",
             "previous": decimal_text(movement.previous_stock),
             "quantity": decimal_text(movement.quantity),
@@ -93,8 +93,8 @@ def daily_data(params, user):
         "alerts": {
             "low_stock": [{"product": p.name, "stock": decimal_text(reconstruct_stock_at(p, end_dt)), "minimum": decimal_text(p.minimum_stock)} for p in low_products],
             "out_of_stock": [{"product": p.name, "stock": "0"} for p in empty_products],
-            "expiring": [{"product": lot.product.name, "lot": lot.number, "expiration": lot.expiration_date.strftime("%d/%m/%Y"), "quantity": decimal_text(lot.quantity)} for lot in expiring_lots],
-            "expired": [{"product": lot.product.name, "lot": lot.number, "expiration": lot.expiration_date.strftime("%d/%m/%Y"), "quantity": decimal_text(lot.quantity)} for lot in expired_lots],
+            "expiring": [{"product": lot.product_name, "lot": lot.number, "expiration": lot.expiration_date.strftime("%d/%m/%Y"), "quantity": decimal_text(lot.quantity)} for lot in expiring_lots],
+            "expired": [{"product": lot.product_name, "lot": lot.number, "expiration": lot.expiration_date.strftime("%d/%m/%Y"), "quantity": decimal_text(lot.quantity)} for lot in expired_lots],
         },
     }
     return {

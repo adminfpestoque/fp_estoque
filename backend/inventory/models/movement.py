@@ -38,7 +38,17 @@ class Movement(TimeStamped):
     INCREASE_TYPES = {ENTRY, ADJUSTMENT_IN, REVERSAL_IN, INVENTORY}
     DECREASE_TYPES = {OUTPUT, ADJUSTMENT_OUT, TRANSFER, LOSS, DAMAGE, EXPIRED, REVERSAL_OUT}
 
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="movements")
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movements",
+    )
+    product_name_snapshot = models.CharField(max_length=180, blank=True)
+    product_code_snapshot = models.CharField(max_length=50, blank=True)
+    category_name_snapshot = models.CharField(max_length=100, blank=True)
+    unit_snapshot = models.CharField(max_length=20, blank=True)
     lot = models.ForeignKey(Lot, on_delete=models.SET_NULL, null=True, blank=True, related_name="movements")
     type = models.CharField(max_length=16, choices=TYPES)
     quantity = models.DecimalField(max_digits=14, decimal_places=3)
@@ -68,6 +78,30 @@ class Movement(TimeStamped):
                 name="inventory_movement_quantities_valid",
             )
         ]
+
+    def save(self, *args, **kwargs):
+        if self.product_id:
+            self.product_name_snapshot = self.product.name
+            self.product_code_snapshot = self.product.code
+            self.category_name_snapshot = self.product.category.name
+            self.unit_snapshot = self.product.unit
+        super().save(*args, **kwargs)
+
+    @property
+    def product_name(self):
+        return self.product.name if self.product_id else self.product_name_snapshot
+
+    @property
+    def product_code(self):
+        return self.product.code if self.product_id else self.product_code_snapshot
+
+    @property
+    def category_name(self):
+        return self.product.category.name if self.product_id else self.category_name_snapshot
+
+    @property
+    def product_unit(self):
+        return self.product.unit if self.product_id else self.unit_snapshot
 
     @property
     def total_value(self):
@@ -128,6 +162,10 @@ class Movement(TimeStamped):
                 sale_price = product.sale_price if type == cls.OUTPUT else Decimal("0")
             return cls.objects.create(
                 product=product,
+                product_name_snapshot=product.name,
+                product_code_snapshot=product.code,
+                category_name_snapshot=product.category.name,
+                unit_snapshot=product.unit,
                 lot=lot,
                 type=type,
                 quantity=quantity,
@@ -227,6 +265,8 @@ class Movement(TimeStamped):
     def reverse(cls, *, original, user, reason=""):
         if original.reversed:
             raise ValidationError("Esta movimentação já foi estornada.")
+        if not original.product_id:
+            raise ValidationError("O produto desta movimentação foi excluído e não pode mais ser estornado.")
         reverse_type = cls.REVERSAL_OUT if original.type in cls.INCREASE_TYPES else cls.REVERSAL_IN
         with transaction.atomic():
             original = cls.objects.select_for_update().get(pk=original.pk)

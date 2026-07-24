@@ -59,7 +59,7 @@ def generic_report_data(report_type, params, user):
             lots = lots.filter(expiration_date__lt=timezone.localdate())
         columns = ["Produto", "Código", "Lote", "Fornecedor", "Quantidade", "Entrada", "Fabricação", "Validade", "Custo", "Situação"]
         for lot in lots.order_by(F("expiration_date").asc(nulls_last=True), "product__name"):
-            rows.append([lot.product.name, lot.product.code, lot.number, lot.supplier.name if lot.supplier else "-", decimal_text(lot.quantity), lot.entry_date.strftime("%d/%m/%Y"), lot.manufacturing_date.strftime("%d/%m/%Y") if lot.manufacturing_date else "-", lot.expiration_date.strftime("%d/%m/%Y") if lot.expiration_date else "-", money(lot.cost_price), lot.status])
+            rows.append([lot.product_name, lot.product_code, lot.number, lot.supplier.name if lot.supplier else "-", decimal_text(lot.quantity), lot.entry_date.strftime("%d/%m/%Y"), lot.manufacturing_date.strftime("%d/%m/%Y") if lot.manufacturing_date else "-", lot.expiration_date.strftime("%d/%m/%Y") if lot.expiration_date else "-", money(lot.cost_price), lot.status])
         summary = {"lots": len(rows), "total_quantity": decimal_text(sum((lot.quantity for lot in lots), Decimal("0")))}
 
     elif report_type in {"entries", "entries_by_supplier"}:
@@ -68,21 +68,21 @@ def generic_report_data(report_type, params, user):
             entries = entries.filter(supplier_id=params["supplier"])
         columns = ["Número", "Data", "Fornecedor", "Nota fiscal", "Itens", "Valor total", "Situação", "Responsável", "Observações"]
         for entry in entries.annotate(items_count=Count("items")):
-            rows.append([entry.number, timezone.localtime(entry.entry_date).strftime("%d/%m/%Y %H:%M"), entry.supplier.name, entry.invoice_number or "-", entry.items_count, money(entry.total_value), entry.get_status_display(), entry.user.get_full_name() or entry.user.username, entry.notes or "-"])
+            rows.append([entry.number, timezone.localtime(entry.entry_date).strftime("%d/%m/%Y %H:%M"), entry.supplier.name, entry.invoice_number or "-", entry.items_count, money(entry.total_value), entry.display_status, entry.user.get_full_name() or entry.user.username, entry.notes or "-"])
         summary = {"entries": len(rows), "total_value": money(entries.aggregate(v=Sum("total_value"))["v"] or 0)}
 
     elif report_type == "outputs":
         outputs = StockOutput.objects.select_related("user").filter(output_date__range=(start_dt, end_dt))
         columns = ["Número", "Data", "Motivo", "Itens", "Situação", "Responsável", "Observações"]
         for output in outputs.annotate(items_count=Count("items")):
-            rows.append([output.number, timezone.localtime(output.output_date).strftime("%d/%m/%Y %H:%M"), output.get_reason_display(), output.items_count, output.get_status_display(), output.user.get_full_name() or output.user.username, output.notes or "-"])
+            rows.append([output.number, timezone.localtime(output.output_date).strftime("%d/%m/%Y %H:%M"), output.get_reason_display(), output.items_count, output.display_status, output.user.get_full_name() or output.user.username, output.notes or "-"])
         summary = {"outputs": len(rows)}
 
     elif report_type in {"movement_history", "movements_by_user", "movements_by_product"}:
         movements, _ = movement_queryset(params)
         columns = ["Data/hora", "Tipo", "Produto", "Código", "Lote", "Anterior", "Quantidade", "Final", "Valor", "Usuário", "Documento", "Motivo"]
         for movement in movements:
-            rows.append([timezone.localtime(movement.created_at).strftime("%d/%m/%Y %H:%M"), movement.get_type_display(), movement.product.name, movement.product.code, movement.lot.number if movement.lot else "-", decimal_text(movement.previous_stock), decimal_text(movement.quantity), decimal_text(movement.final_stock), money(movement.total_value), movement.user.get_full_name() or movement.user.username, movement.document or "-", movement.reason or "-"])
+            rows.append([timezone.localtime(movement.created_at).strftime("%d/%m/%Y %H:%M"), movement.get_type_display(), movement.product_name, movement.product_code, movement.lot.number if movement.lot else "-", decimal_text(movement.previous_stock), decimal_text(movement.quantity), decimal_text(movement.final_stock), money(movement.total_value), movement.user.get_full_name() or movement.user.username, movement.document or "-", movement.reason or "-"])
         summary = {"movements": len(rows), "total_value": money(sum((movement.total_value for movement in movements), Decimal("0")))}
 
     elif report_type == "inventory_value_category":

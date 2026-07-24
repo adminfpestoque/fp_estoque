@@ -135,7 +135,15 @@ class ProductSupplier(TimeStamped):
 
 
 class Lot(TimeStamped):
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="lots")
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lots",
+    )
+    product_name_snapshot = models.CharField(max_length=180, blank=True)
+    product_code_snapshot = models.CharField(max_length=50, blank=True)
     number = models.CharField(max_length=80)
     received_quantity = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     quantity = models.DecimalField(max_digits=14, decimal_places=3, default=0)
@@ -163,6 +171,20 @@ class Lot(TimeStamped):
             )
         ]
 
+    def save(self, *args, **kwargs):
+        if self.product_id:
+            self.product_name_snapshot = self.product.name
+            self.product_code_snapshot = self.product.code
+        super().save(*args, **kwargs)
+
+    @property
+    def product_name(self):
+        return self.product.name if self.product_id else self.product_name_snapshot
+
+    @property
+    def product_code(self):
+        return self.product.code if self.product_id else self.product_code_snapshot
+
     @property
     def expired(self):
         return bool(self.expiration_date and self.expiration_date < timezone.localdate())
@@ -178,6 +200,6 @@ class Lot(TimeStamped):
         return "AVAILABLE"
 
     def __str__(self):
-        return f"{self.product} — lote {self.number}"
+        return f"{self.product_name or 'Produto excluído'} — lote {self.number}"
 
 

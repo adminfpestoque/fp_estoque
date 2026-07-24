@@ -142,8 +142,8 @@ class LotSerializer(serializers.ModelSerializer):
     received_quantity = IntegerQuantityField(read_only=True)
     quantity = IntegerQuantityField(read_only=True)
     cost_price = MoneyField(max_digits=12, read_only=True)
-    product_name = serializers.CharField(source="product.name", read_only=True)
-    product_code = serializers.CharField(source="product.code", read_only=True)
+    product_name = serializers.CharField(read_only=True)
+    product_code = serializers.CharField(read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     status = serializers.CharField(read_only=True)
     expired = serializers.BooleanField(read_only=True)
@@ -154,6 +154,8 @@ class LotSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "quantity",
             "received_quantity",
+            "product_name_snapshot",
+            "product_code_snapshot",
             "created_at",
             "updated_at",
         ]

@@ -142,9 +142,9 @@ class SupplierViewSet(BaseViewSet):
     def get_queryset(self):
         return Supplier.objects.annotate(
             products_count=Count("product_links", distinct=True),
-            entries_count=Count("entries", distinct=True),
-            entries_value=Sum("entries__total_value"),
-            last_entry=Max("entries__entry_date"),
+            entries_count=Count("entries", filter=Q(entries__deleted_at__isnull=True), distinct=True),
+            entries_value=Sum("entries__total_value", filter=Q(entries__deleted_at__isnull=True)),
+            last_entry=Max("entries__entry_date", filter=Q(entries__deleted_at__isnull=True)),
         ).order_by("name")
 
 
@@ -180,19 +180,62 @@ class ProductViewSet(BaseViewSet):
                 }
             )
 
-        relations = [
-            ("lots", "lots", "Lotes"),
-            ("movements", "movements", "Movimentações"),
-            ("entry_items", "entries", "Entradas"),
-            ("output_items", "outputs", "Saídas"),
+        live_lots = product.lots.filter(quantity__gt=0).count()
+        if live_lots:
+            blockers.append(
+                {
+                    "code": "lots",
+                    "label": "Lotes com saldo",
+                    "count": live_lots,
+                    "description": f"{live_lots} lote(s) ainda possuem saldo",
+                }
+            )
+
+        active_entries = product.entry_items.filter(entry__deleted_at__isnull=True).count()
+        if active_entries:
+            blockers.append(
+                {
+                    "code": "entries",
+                    "label": "Entradas não excluídas",
+                    "count": active_entries,
+                    "description": f"{active_entries} item(ns) em entradas não excluídas",
+                }
+            )
+
+        active_outputs = product.output_items.filter(output__deleted_at__isnull=True).count()
+        if active_outputs:
+            blockers.append(
+                {
+                    "code": "outputs",
+                    "label": "Saídas não excluídas",
+                    "count": active_outputs,
+                    "description": f"{active_outputs} item(ns) em saídas não excluídas",
+                }
+            )
+
+        deleted_document_movements = (
+            Q(entry__deleted_at__isnull=False)
+            | Q(output__deleted_at__isnull=False)
+            | Q(reversal_of__entry__deleted_at__isnull=False)
+            | Q(reversal_of__output__deleted_at__isnull=False)
+        )
+        active_movements = product.movements.exclude(deleted_document_movements).count()
+        if active_movements:
+            blockers.append(
+                {
+                    "code": "movements",
+                    "label": "Movimentações preservadas",
+                    "count": active_movements,
+                    "description": f"{active_movements} movimentação(ões) não pertencem a documentos excluídos",
+                }
+            )
+
+        governance_relations = [
             ("adjustments", "adjustments", "Ajustes"),
             ("inventory_items", "inventories", "Inventários"),
         ]
-        for relation, code, label in relations:
-            manager = getattr(product, relation, None)
-            if manager is None:
-                continue
-            count = manager.count()
+        for relation, code, label in governance_relations:
+            count = getattr(product, relation).count()
             if count:
                 blockers.append(
                     {
@@ -290,7 +333,7 @@ class LotViewSet(BaseViewSet):
     queryset = Lot.objects.select_related("product", "supplier").all()
     serializer_class = LotSerializer
     filterset_fields = ["product", "supplier", "active", "expiration_date"]
-    search_fields = ["number", "product__name", "product__code", "supplier__name"]
+    search_fields = ["number", "product__name", "product__code", "product_name_snapshot", "product_code_snapshot", "supplier__name"]
     ordering_fields = ["expiration_date", "quantity", "entry_date", "created_at"]
     http_method_names = ["get", "head", "options"]
 

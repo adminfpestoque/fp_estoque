@@ -139,7 +139,7 @@ def _build_alert_candidates():
                     "level": Alert.CRITICAL,
                     "product": lot.product,
                     "lot": lot,
-                    "message": f"O lote {lot.number} de {lot.product.name} está vencido.",
+                    "message": f"O lote {lot.number} de {lot.product_name} está vencido.",
                 }
             )
         elif lot.expiration_date and lot.expiration_date <= limit:
@@ -150,7 +150,7 @@ def _build_alert_candidates():
                     "product": lot.product,
                     "lot": lot,
                     "message": (
-                        f"O lote {lot.number} de {lot.product.name} vence em "
+                        f"O lote {lot.number} de {lot.product_name} vence em "
                         f"{lot.expiration_date:%d/%m/%Y}."
                     ),
                 }

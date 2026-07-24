@@ -62,9 +62,14 @@ class DataGovernanceTests(TestCase):
         self.assertIn("stock", [item["code"] for item in response.data["blockers"]])
         self.assertTrue(response.data["can_deactivate"])
 
-    def test_product_with_history_cannot_be_permanently_deleted(self):
-        product = self.create_product()
-        Lot.objects.create(product=product, number="LOTE-GOV")
+    def test_product_with_active_lot_cannot_be_permanently_deleted(self):
+        product = self.create_product(stock=Decimal("1"))
+        Lot.objects.create(
+            product=product,
+            number="LOTE-GOV",
+            received_quantity=Decimal("1"),
+            quantity=Decimal("1"),
+        )
 
         response = self.client.delete(f"/api/products/{product.id}/")
 

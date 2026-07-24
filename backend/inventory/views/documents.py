@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
@@ -12,12 +12,70 @@ from ..services import audit, notify_users, refresh_alerts
 from .common import BaseViewSet, error_detail
 
 
-class StockEntryViewSet(BaseViewSet):
-    queryset = StockEntry.objects.select_related("supplier", "user", "cancelled_by").prefetch_related("items__product", "items__lot")
+class SoftDeletedDocumentViewSet(BaseViewSet):
+    deleted_label = "registro"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        deleted = self.request.query_params.get("deleted")
+        if deleted == "true":
+            queryset = queryset.filter(deleted_at__isnull=False)
+        elif deleted == "false":
+            queryset = queryset.filter(deleted_at__isnull=True)
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        document = self.get_object()
+        try:
+            document.soft_delete(request.user, request.data.get("reason") or "")
+            refresh_alerts(notify=True)
+            audit(
+                request.user,
+                "SOFT_DELETE",
+                document,
+                f"{self.deleted_label.capitalize()} {document.number} excluída logicamente.",
+                metadata={"number": document.number, "reason": document.deletion_reason},
+            )
+            notify_users(
+                f"{self.deleted_label.capitalize()} excluída",
+                (
+                    f"A {self.deleted_label} {document.number} foi excluída por "
+                    f"{request.user.username}. O registro permanece no histórico."
+                ),
+                level=Alert.WARNING,
+            )
+            document.refresh_from_db()
+            return Response(self.get_serializer(document).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as exc:
+            return Response({"detail": error_detail(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StockEntryViewSet(SoftDeletedDocumentViewSet):
+    queryset = StockEntry.objects.select_related(
+        "supplier", "user", "cancelled_by", "deleted_by"
+    ).prefetch_related("items__product", "items__lot")
     serializer_class = StockEntrySerializer
     filterset_fields = ["status", "supplier", "user"]
-    search_fields = ["number", "invoice_number", "supplier__name", "notes"]
-    ordering_fields = ["entry_date", "total_value", "created_at"]
+    search_fields = [
+        "number",
+        "invoice_number",
+        "supplier__name",
+        "notes",
+        "items__product__name",
+        "items__product_name_snapshot",
+    ]
+    ordering_fields = ["entry_date", "total_value", "created_at", "deleted_at"]
+    deleted_label = "entrada"
+
+    def perform_update(self, serializer):
+        entry = serializer.save()
+        refresh_alerts(notify=True)
+        audit(self.request.user, "UPDATE", entry, f"Entrada {entry.number} atualizada.")
+        notify_users(
+            "Entrada atualizada",
+            f"A entrada {entry.number} foi atualizada por {self.request.user.username}.",
+            level=Alert.INFO,
+        )
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
@@ -52,12 +110,30 @@ class StockEntryViewSet(BaseViewSet):
             return Response({"detail": error_detail(exc)}, status=400)
 
 
-class StockOutputViewSet(BaseViewSet):
-    queryset = StockOutput.objects.select_related("user", "cancelled_by").prefetch_related("items__product", "items__lot")
+class StockOutputViewSet(SoftDeletedDocumentViewSet):
+    queryset = StockOutput.objects.select_related(
+        "user", "cancelled_by", "deleted_by"
+    ).prefetch_related("items__product", "items__lot")
     serializer_class = StockOutputSerializer
     filterset_fields = ["status", "reason", "user"]
-    search_fields = ["number", "notes", "items__product__name"]
-    ordering_fields = ["output_date", "created_at"]
+    search_fields = [
+        "number",
+        "notes",
+        "items__product__name",
+        "items__product_name_snapshot",
+    ]
+    ordering_fields = ["output_date", "created_at", "deleted_at"]
+    deleted_label = "saída"
+
+    def perform_update(self, serializer):
+        output = serializer.save()
+        refresh_alerts(notify=True)
+        audit(self.request.user, "UPDATE", output, f"Saída {output.number} atualizada.")
+        notify_users(
+            "Saída atualizada",
+            f"A saída {output.number} foi atualizada por {self.request.user.username}.",
+            level=Alert.INFO,
+        )
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
@@ -97,7 +173,7 @@ class MovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     serializer_class = MovementSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["type", "product", "lot", "user", "reversed"]
-    search_fields = ["product__name", "product__code", "reason", "document", "notes", "user__username"]
+    search_fields = ["product__name", "product__code", "product_name_snapshot", "product_code_snapshot", "reason", "document", "notes", "user__username"]
     ordering_fields = ["created_at", "quantity", "unit_cost", "final_stock"]
     ordering = ["-created_at"]
     queryset = Movement.objects.select_related("product", "product__category", "lot", "user").all()
@@ -121,7 +197,7 @@ class MovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
             audit(request.user, "REVERSE", movement, f"Movimentação #{movement.pk} estornada.")
             notify_users(
                 "Movimentação estornada",
-                f"A movimentação #{movement.pk} de {movement.product.name} foi estornada por {request.user.username}.",
+                f"A movimentação #{movement.pk} de {movement.product_name} foi estornada por {request.user.username}.",
                 level=Alert.WARNING,
             )
             return Response(self.get_serializer(reversal).data, status=201)
