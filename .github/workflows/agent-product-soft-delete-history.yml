@@ -61,7 +61,12 @@ jobs:
         run: |
           set -euo pipefail
           if ! python manage.py test > /tmp/backend-tests.log 2>&1; then
-            tail -n 180 /tmp/backend-tests.log
+            tail -n 220 /tmp/backend-tests.log > ../backend-test-failure.txt
+            cd ..
+            git add backend-test-failure.txt
+            git commit -m "chore: capture backend test failure"
+            git push origin HEAD:agent/product-soft-delete-diagnostic --force
+            cat backend-test-failure.txt
             exit 1
           fi
           tail -n 40 /tmp/backend-tests.log
