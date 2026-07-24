@@ -9,7 +9,6 @@ import { SuppliersPage } from "./pages/suppliers.jsx";
 import { CategoriesPage } from "./pages/categories.jsx";
 import { DocumentPage } from "./pages/documents.jsx";
 import { LotsPage } from "./pages/lots.jsx";
-import { MovementsPage } from "./pages/movements.jsx";
 import { AdjustmentsPage } from "./pages/adjustments.jsx";
 import { InventoriesPage } from "./pages/inventories.jsx";
 import { AlertsPage } from "./pages/alerts.jsx";
@@ -93,12 +92,11 @@ function App() {
     entries: <DocumentPage type="entries" notify={notify} me={me} />,
     outputs: <DocumentPage type="outputs" notify={notify} me={me} />,
     lots: <LotsPage />,
-    movements: <MovementsPage me={me} notify={notify} />,
     adjustments: <AdjustmentsPage notify={notify} />,
     inventories: <InventoriesPage me={me} notify={notify} />,
     alerts: <AlertsPage me={me} notify={notify} />,
     notifications: <NotificationsPage notify={notify} onChanged={loadNotifications} />,
-    reports: <ReportsPage notify={notify} />,
+    reports: <ReportsPage notify={notify} me={me} />,
     users: <UsersPage notify={notify} />,
     settings: <SettingsPage notify={notify} />,
   };

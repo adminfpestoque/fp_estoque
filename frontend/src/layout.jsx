@@ -13,7 +13,6 @@ import {
   ClipboardCheck,
   FileText,
   Gauge,
-  History,
   Layers3,
   LogOut,
   Menu,
@@ -26,19 +25,18 @@ import {
 } from "./shared.jsx";
 
 const menuItems = [
-  ["dashboard", Gauge, "Dashboard", null, "Controle interno • dados em tempo real"],
+  ["dashboard", Gauge, "Painel", null, "Visão geral do estoque e das vendas em tempo real"],
   ["products", Package, "Produtos", null, "Cadastre, consulte e mantenha o catálogo do estoque."],
   ["categories", Layers3, "Categorias", null, "Organize os produtos por grupos."],
   ["suppliers", Truck, "Fornecedores", null, "Dados cadastrais, contatos e histórico de recebimentos."],
   ["entries", ArrowDownToLine, "Entradas", null, "Recebimentos com lotes, validade, custos e nota fiscal."],
   ["outputs", ArrowUpFromLine, "Saídas", null, "Retiradas internas com controle FEFO e bloqueio de estoque negativo."],
   ["lots", Boxes, "Lotes e validade", null, "Quantidades disponíveis por lote com alertas de vencimento e regra FEFO."],
-  ["movements", History, "Movimentações", null, "Registro imutável para auditoria, com correções feitas por estorno."],
   ["adjustments", SlidersHorizontal, "Ajustes", "admin", "Correções autorizadas com justificativa obrigatória e histórico auditável."],
   ["inventories", ClipboardCheck, "Inventários", null, "Conte os produtos, identifique sobras e faltas e gere os ajustes com rastreabilidade."],
   ["alerts", AlertTriangle, "Alertas", null, "Estoque mínimo, falta de produtos, validade e divergências."],
   ["notifications", Bell, "Notificações", null, "Acompanhe avisos novos e o histórico de notificações."],
-  ["reports", FileText, "Relatórios", null, "Visualize os dados reais do banco antes de exportar em PDF ou Excel (XLSX)."],
+  ["reports", FileText, "Relatórios", null, "Consulte o histórico e gere relatórios em PDF ou planilha (XLSX)."],
   ["users", Users, "Usuários", "admin", "Cadastre usuários e defina diretamente o perfil de acesso de cada pessoa."],
   ["settings", Settings, "Configurações", "admin", "Parâmetros administrativos do estoque e dos alertas."],
 ];

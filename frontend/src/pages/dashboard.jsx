@@ -11,9 +11,7 @@ import {
   getError,
   Button,
   Field,
-  EmptyState,
   DataTable,
-  StatusBadge,
   AlertTriangle,
   Archive,
   ArrowDownToLine,
@@ -25,16 +23,6 @@ import {
   Package,
   RefreshCw,
   X,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
 } from "../shared.jsx";
 import { MetricCard } from "../layout.jsx";
 
@@ -130,30 +118,6 @@ export function DashboardPage() {
     [allProducts, filters.category],
   );
 
-  const productChart = useMemo(
-    () =>
-      (data?.charts?.product_sales || []).map((row) => ({
-        ...row,
-        quantity: asNumber(row.quantity),
-        revenue: asNumber(row.revenue),
-        profit: asNumber(row.profit),
-        stock: asNumber(row.stock),
-      })),
-    [data],
-  );
-
-  const salesChart = useMemo(
-    () =>
-      (data?.charts?.sales || []).map((row) => ({
-        ...row,
-        quantity: asNumber(row.quantity),
-        revenue: asNumber(row.revenue),
-        cost: asNumber(row.cost),
-        profit: asNumber(row.profit),
-      })),
-    [data],
-  );
-
   function changeCategory(category) {
     const productStillValid = allProducts.some(
       (product) =>
@@ -173,20 +137,19 @@ export function DashboardPage() {
   }
 
   if (!data && loading) {
-    return <div className="loading"><RefreshCw className="spin" /> Carregando dashboard...</div>;
+    return <div className="loading"><RefreshCw className="spin" /> Carregando painel...</div>;
   }
 
   if (!data) {
-    return <div className="form-error">{error || "Não foi possível carregar a dashboard."}</div>;
+    return <div className="form-error">{error || "Não foi possível carregar o painel."}</div>;
   }
 
   const sales = data.sales || {};
-  const hasSales = asNumber(sales.quantity_sold) > 0;
   const isSalesView = dashboardView === "sales";
 
   return (
     <>
-      <section className="dashboard-view-switch" aria-label="Escolha a visualização da dashboard">
+      <section className="dashboard-view-switch" aria-label="Escolha a visualização do painel">
         <button
           type="button"
           className={`dashboard-view-option ${isSalesView ? "active" : ""}`}
@@ -306,7 +269,7 @@ export function DashboardPage() {
       {error && <div className="form-error dashboard-request-error">{error}</div>}
 
       {isSalesView ? (
-        <div className="dashboard-view-content" key="sales-dashboard">
+        <div className="dashboard-view-content" key="sales-panel">
           <div className="dashboard-section-heading">
             <div>
               <h3>Resumo de vendas e rentabilidade</h3>
@@ -390,58 +353,9 @@ export function DashboardPage() {
             />
           </section>
 
-          <div className="dashboard-grid">
-            <section className="panel chart-panel">
-              <div className="panel-title dashboard-panel-title">
-                <div>
-                  <h3>Vendas e lucro por produto</h3>
-                  <p>Produtos com maior valor vendido no período.</p>
-                </div>
-              </div>
-              {productChart.some((row) => row.revenue > 0) ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <BarChart data={productChart} margin={{ bottom: 58 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" interval={0} angle={-24} textAnchor="end" height={75} />
-                    <YAxis />
-                    <Tooltip formatter={(value) => fmtMoney(value)} />
-                    <Legend />
-                    <Bar dataKey="revenue" name="Valor vendido" fill="#f5b400" />
-                    <Bar dataKey="profit" name="Lucro bruto" fill="#207a45" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState title="Nenhuma venda no período" text="Confirme uma saída com o motivo Retirada para comercialização." />
-              )}
-            </section>
-
-            <section className="panel chart-panel">
-              <div className="panel-title dashboard-panel-title">
-                <div>
-                  <h3>Evolução das vendas</h3>
-                  <p>Valor vendido e lucro bruto por dia.</p>
-                </div>
-              </div>
-              {hasSales ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={salesChart}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => fmtMoney(value)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="revenue" name="Valor vendido" stroke="#f5b400" strokeWidth={3} />
-                    <Line type="monotone" dataKey="profit" name="Lucro bruto" stroke="#207a45" strokeWidth={3} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState title="Nenhuma venda no período" text="Altere o período ou os filtros para consultar outras vendas." />
-              )}
-            </section>
-          </div>
         </div>
       ) : (
-        <div className="dashboard-view-content" key="stock-dashboard">
+        <div className="dashboard-view-content" key="stock-panel">
           <div className="dashboard-section-heading">
             <div>
               <h3>Resumo da posição atual do estoque</h3>
@@ -535,46 +449,6 @@ export function DashboardPage() {
             />
           </section>
 
-          <div className="dashboard-grid">
-            <section className="panel chart-panel">
-              <div className="panel-title dashboard-panel-title">
-                <div>
-                  <h3>Quantidade em estoque por produto</h3>
-                  <p>Produtos com maior quantidade disponível no filtro atual.</p>
-                </div>
-              </div>
-              {productChart.some((row) => row.stock > 0) ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <BarChart data={productChart} margin={{ bottom: 58 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" interval={0} angle={-24} textAnchor="end" height={75} />
-                    <YAxis />
-                    <Tooltip formatter={(value) => fmtQty(value)} />
-                    <Bar dataKey="stock" name="Estoque disponível" fill="#f5b400" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState title="Nenhum estoque disponível" text="Os produtos do filtro selecionado estão sem saldo disponível." />
-              )}
-            </section>
-
-            <section className="panel">
-              <div className="panel-title dashboard-panel-title">
-                <div>
-                  <h3>Alertas atuais do estoque</h3>
-                  <p>Situações que exigem atenção nos produtos selecionados.</p>
-                </div>
-              </div>
-              <DataTable
-                rows={data.alerts}
-                columns={[
-                  { key: "level", label: "Nível", render: (row) => <StatusBadge value={row.level} label={row.level_display} /> },
-                  { key: "product_name", label: "Produto" },
-                  { key: "message", label: "Mensagem" },
-                ]}
-              />
-            </section>
-          </div>
         </div>
       )}
     </>

@@ -113,3 +113,69 @@ tbody tr:hover { background: #fffdf5; }
 .toast button { border: 0; background: transparent; color: white; display: grid; place-items: center; }
 .app-loading { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 20px; background: #111; color: white; }
 .mobile-overlay { display: none; }
+
+.section-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 5px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+}
+.section-tabs button {
+  width: auto;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #555;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+.section-tabs button.active {
+  background: var(--gold);
+  color: #111;
+}
+.section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
+.section-heading h3 { margin: 0; font-size: 19px; }
+.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.compact-heading { margin-bottom: 18px; }
+.embedded-report-section { animation: dashboard-view-enter .2s ease both; }
+
+.city-combobox { position: relative; }
+.city-suggestions {
+  position: absolute;
+  z-index: 140;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 14px 36px rgba(0,0,0,.16);
+}
+.city-suggestions button {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  border-radius: 0;
+  background: white;
+  color: #222;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+.city-suggestions button:hover,
+.city-suggestions button:focus { background: #fff8dc; }
+.city-suggestions button strong { color: #765800; font-size: 12px; }
+.city-suggestions-empty { padding: 14px; color: var(--muted); text-align: center; }

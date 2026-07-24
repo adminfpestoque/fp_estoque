@@ -14,10 +14,39 @@ import {
   FileDown,
   FileText,
   Eye,
+  History,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
+import { MovementsPage } from "./movements.jsx";
 
-export function ReportsPage({ notify }) {
+const SUMMARY_LABELS = {
+  total_movements: "Total de movimentações",
+  entries: "Entradas",
+  outputs: "Saídas",
+  adjustments_positive: "Ajustes positivos",
+  adjustments_negative: "Ajustes negativos",
+  products_moved: "Produtos movimentados",
+  entry_value: "Valor das entradas",
+  output_value: "Valor das saídas",
+  end_inventory_value: "Valor final do estoque",
+  cancelled_or_reversed: "Canceladas ou estornadas",
+  products: "Produtos",
+  lots: "Lotes",
+  total_quantity: "Quantidade total",
+  total_value: "Valor total",
+  categories: "Categorias",
+  suppliers: "Fornecedores",
+  divergences: "Divergências",
+  movements: "Movimentações",
+};
+
+function summaryLabel(key) {
+  return SUMMARY_LABELS[key]
+    || key.replaceAll("_", " ").replace(/^./, (letter) => letter.toLocaleUpperCase("pt-BR"));
+}
+
+export function ReportsPage({ notify, me }) {
+  const [activeTab, setActiveTab] = useState("reports");
   const [catalog, setCatalog] = useState([]);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -49,15 +78,17 @@ export function ReportsPage({ notify }) {
       api.get("suppliers/?page_size=500"),
       api.get("users/?page_size=500").catch(() => ({ data: [] })),
       api.get("lots/?page_size=500"),
-    ]).then(([reports, productData, categoryData, supplierData, userData, lotData]) => {
-      setCatalog(reports.data);
-      setProducts(unwrap(productData.data));
-      setCategories(unwrap(categoryData.data));
-      setSuppliers(unwrap(supplierData.data));
-      setUsers(unwrap(userData.data));
-      setLots(unwrap(lotData.data));
-    });
-  }, []);
+    ])
+      .then(([reports, productData, categoryData, supplierData, userData, lotData]) => {
+        setCatalog(reports.data);
+        setProducts(unwrap(productData.data));
+        setCategories(unwrap(categoryData.data));
+        setSuppliers(unwrap(supplierData.data));
+        setUsers(unwrap(userData.data));
+        setLots(unwrap(lotData.data));
+      })
+      .catch((error) => notify(getError(error), "error"));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate() {
     setLoading(true);
@@ -90,167 +121,203 @@ export function ReportsPage({ notify }) {
 
   return (
     <>
-      <PageHeader
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              icon={FileDown}
-              onClick={() => download("xlsx")}
-              disabled={!preview}
-            >
-              Baixar Excel
-            </Button>
-            <Button icon={FileText} onClick={() => download("pdf")} disabled={!preview}>
-              Baixar PDF
-            </Button>
-          </>
-        }
-      />
+      <div className="section-tabs" role="tablist" aria-label="Opções de relatórios">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "reports"}
+          className={activeTab === "reports" ? "active" : ""}
+          onClick={() => setActiveTab("reports")}
+        >
+          <FileText size={18} />
+          Gerar relatórios
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "movements"}
+          className={activeTab === "movements" ? "active" : ""}
+          onClick={() => setActiveTab("movements")}
+        >
+          <History size={18} />
+          Histórico de movimentações
+        </button>
+      </div>
 
-      <section className="panel report-filters">
-        <div className="form-grid cols-4">
-          <Field label="Relatório">
-            <select
-              value={filters.type}
-              onChange={(event) => setFilters({ ...filters, type: event.target.value })}
-            >
-              {catalog.map((report) => (
-                <option key={report.id} value={report.id}>{report.name}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Data específica">
-            <input
-              type="date"
-              value={filters.date}
-              onChange={(event) => setFilters({ ...filters, date: event.target.value, start_date: "", end_date: "" })}
-            />
-          </Field>
-          <Field label="Data inicial">
-            <input
-              type="date"
-              value={filters.start_date}
-              onChange={(event) => setFilters({ ...filters, start_date: event.target.value, date: "" })}
-            />
-          </Field>
-          <Field label="Data final">
-            <input
-              type="date"
-              value={filters.end_date}
-              onChange={(event) => setFilters({ ...filters, end_date: event.target.value, date: "" })}
-            />
-          </Field>
-          <Field label="Produto">
-            <select value={filters.product} onChange={(event) => setFilters({ ...filters, product: event.target.value })}>
-              <option value="">Todos</option>
-              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Categoria">
-            <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
-              <option value="">Todas</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Fornecedor">
-            <select value={filters.supplier} onChange={(event) => setFilters({ ...filters, supplier: event.target.value })}>
-              <option value="">Todos</option>
-              {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Tipo de movimentação">
-            <select value={filters.movement_type} onChange={(event) => setFilters({ ...filters, movement_type: event.target.value })}>
-              <option value="">Todos</option>
-              <option value="ENTRY">Entrada</option>
-              <option value="OUTPUT">Saída</option>
-              <option value="ADJ_IN">Ajuste positivo</option>
-              <option value="ADJ_OUT">Ajuste negativo</option>
-              <option value="REV_IN">Estorno positivo</option>
-              <option value="REV_OUT">Estorno negativo</option>
-            </select>
-          </Field>
-          <Field label="Usuário">
-            <select value={filters.user} onChange={(event) => setFilters({ ...filters, user: event.target.value })}>
-              <option value="">Todos</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>{user.profile?.full_name || user.username}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Lote">
-            <select value={filters.lot} onChange={(event) => setFilters({ ...filters, lot: event.target.value })}>
-              <option value="">Todos</option>
-              {lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.product_name} — {lot.number}</option>)}
-            </select>
-          </Field>
-          <Field label="Marca">
-            <input value={filters.brand} onChange={(event) => setFilters({ ...filters, brand: event.target.value })} placeholder="Todas" />
-          </Field>
-          <Field label="Situação do estoque">
-            <select value={filters.stock_status} onChange={(event) => setFilters({ ...filters, stock_status: event.target.value })}>
-              <option value="">Todas</option>
-              <option value="normal">Normal</option>
-              <option value="low">Estoque baixo</option>
-              <option value="out">Sem estoque</option>
-            </select>
-          </Field>
-          <div className="form-actions align-end">
-            <Button icon={Eye} onClick={generate} disabled={loading}>
-              {loading ? "Gerando..." : "Visualizar"}
-            </Button>
-          </div>
-        </div>
-      </section>
+      {activeTab === "movements" ? (
+        <MovementsPage me={me} notify={notify} embedded />
+      ) : (
+        <>
+          <PageHeader
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  icon={FileDown}
+                  onClick={() => download("xlsx")}
+                  disabled={!preview}
+                >
+                  Baixar planilha
+                </Button>
+                <Button icon={FileText} onClick={() => download("pdf")} disabled={!preview}>
+                  Baixar PDF
+                </Button>
+              </>
+            }
+          />
 
-      {preview && (
-        <section className="panel report-preview">
-          <div className="report-preview-head">
-            <div>
-              <Logo />
-              <h3>{preview.title}</h3>
-              <p>Período: {preview.period} • Gerado em {preview.generated_at} por {preview.generated_by}</p>
+          <section className="panel report-filters">
+            <div className="section-heading compact-heading">
+              <div>
+                <h3>Gerador de relatórios</h3>
+                <p>Escolha o relatório e aplique somente os filtros necessários.</p>
+              </div>
             </div>
-          </div>
-          {preview.summary && (
-            <div className="summary-cards">
-              {Object.entries(preview.summary).map(([key, value]) => (
-                <div key={key}>
-                  <small>{key.replaceAll("_", " ")}</small>
-                  <strong>{value}</strong>
+
+            <div className="form-grid cols-4">
+              <Field label="Relatório">
+                <select
+                  value={filters.type}
+                  onChange={(event) => setFilters({ ...filters, type: event.target.value })}
+                >
+                  {catalog.map((report) => (
+                    <option key={report.id} value={report.id}>{report.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Data específica">
+                <input
+                  type="date"
+                  value={filters.date}
+                  onChange={(event) => setFilters({ ...filters, date: event.target.value, start_date: "", end_date: "" })}
+                />
+              </Field>
+              <Field label="Data inicial">
+                <input
+                  type="date"
+                  value={filters.start_date}
+                  onChange={(event) => setFilters({ ...filters, start_date: event.target.value, date: "" })}
+                />
+              </Field>
+              <Field label="Data final">
+                <input
+                  type="date"
+                  value={filters.end_date}
+                  onChange={(event) => setFilters({ ...filters, end_date: event.target.value, date: "" })}
+                />
+              </Field>
+              <Field label="Produto">
+                <select value={filters.product} onChange={(event) => setFilters({ ...filters, product: event.target.value })}>
+                  <option value="">Todos</option>
+                  {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Categoria">
+                <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
+                  <option value="">Todas</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Fornecedor">
+                <select value={filters.supplier} onChange={(event) => setFilters({ ...filters, supplier: event.target.value })}>
+                  <option value="">Todos</option>
+                  {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Tipo de movimentação">
+                <select value={filters.movement_type} onChange={(event) => setFilters({ ...filters, movement_type: event.target.value })}>
+                  <option value="">Todos</option>
+                  <option value="ENTRY">Entrada</option>
+                  <option value="OUTPUT">Saída</option>
+                  <option value="ADJ_IN">Ajuste positivo</option>
+                  <option value="ADJ_OUT">Ajuste negativo</option>
+                  <option value="REV_IN">Estorno positivo</option>
+                  <option value="REV_OUT">Estorno negativo</option>
+                </select>
+              </Field>
+              <Field label="Usuário">
+                <select value={filters.user} onChange={(event) => setFilters({ ...filters, user: event.target.value })}>
+                  <option value="">Todos</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>{user.profile?.full_name || user.username}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Lote">
+                <select value={filters.lot} onChange={(event) => setFilters({ ...filters, lot: event.target.value })}>
+                  <option value="">Todos</option>
+                  {lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.product_name} — {lot.number}</option>)}
+                </select>
+              </Field>
+              <Field label="Marca">
+                <input value={filters.brand} onChange={(event) => setFilters({ ...filters, brand: event.target.value })} placeholder="Todas" />
+              </Field>
+              <Field label="Situação do estoque">
+                <select value={filters.stock_status} onChange={(event) => setFilters({ ...filters, stock_status: event.target.value })}>
+                  <option value="">Todas</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Estoque baixo</option>
+                  <option value="out">Sem estoque</option>
+                </select>
+              </Field>
+              <div className="form-actions align-end">
+                <Button icon={Eye} onClick={generate} disabled={loading}>
+                  {loading ? "Gerando..." : "Visualizar"}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          {preview && (
+            <section className="panel report-preview">
+              <div className="report-preview-head">
+                <div>
+                  <Logo />
+                  <h3>{preview.title}</h3>
+                  <p>Período: {preview.period} • Gerado em {preview.generated_at} por {preview.generated_by}</p>
                 </div>
-              ))}
-            </div>
+              </div>
+              {preview.summary && (
+                <div className="summary-cards">
+                  {Object.entries(preview.summary).map(([key, value]) => (
+                    <div key={key}>
+                      <small>{summaryLabel(key)}</small>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {preview.empty_message ? (
+                <EmptyState title="Sem dados no período" text={preview.empty_message} />
+              ) : (
+                <DataTable
+                  rows={preview.rows}
+                  columns={
+                    preview.report_type === "daily_movements"
+                      ? [
+                        { key: "time", label: "Data/hora" },
+                        { key: "type", label: "Tipo" },
+                        { key: "product", label: "Produto" },
+                        { key: "code", label: "Código" },
+                        { key: "lot", label: "Lote" },
+                        { key: "previous", label: "Anterior" },
+                        { key: "quantity", label: "Movimentada" },
+                        { key: "final", label: "Final" },
+                        { key: "total", label: "Valor" },
+                        { key: "user", label: "Responsável" },
+                      ]
+                      : preview.columns.map((label, index) => ({
+                        key: String(index),
+                        label,
+                        render: (row) => row[index],
+                      }))
+                  }
+                  rowKey={preview.report_type === "daily_movements" ? "time" : "_row"}
+                />
+              )}
+            </section>
           )}
-          {preview.empty_message ? (
-            <EmptyState title="Sem dados no período" text={preview.empty_message} />
-          ) : (
-            <DataTable
-              rows={preview.rows}
-              columns={
-                preview.report_type === "daily_movements"
-                  ? [
-                    { key: "time", label: "Data/hora" },
-                    { key: "type", label: "Tipo" },
-                    { key: "product", label: "Produto" },
-                    { key: "code", label: "Código" },
-                    { key: "lot", label: "Lote" },
-                    { key: "previous", label: "Anterior" },
-                    { key: "quantity", label: "Movimentada" },
-                    { key: "final", label: "Final" },
-                    { key: "total", label: "Valor" },
-                    { key: "user", label: "Responsável" },
-                  ]
-                  : preview.columns.map((label, index) => ({
-                    key: String(index),
-                    label,
-                    render: (row) => row[index],
-                  }))
-              }
-              rowKey={preview.report_type === "daily_movements" ? "time" : "_row"}
-            />
-          )}
-        </section>
+        </>
       )}
     </>
   );
