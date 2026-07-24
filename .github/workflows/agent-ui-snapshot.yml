@@ -1,0 +1,29 @@
+name: Agent UI snapshot
+
+on:
+  push:
+    branches:
+      - agent/ui-portuguese-refactor
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload repository snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: fp-estoque-ui-source
+          path: |
+            .
+            !.git/**
+            !frontend/node_modules/**
+            !frontend/dist/**
+            !backend/.venv/**
+            !backend/db.sqlite3
+          retention-days: 1
