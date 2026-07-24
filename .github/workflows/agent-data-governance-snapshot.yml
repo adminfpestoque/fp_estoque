@@ -23,10 +23,29 @@ jobs:
           set -euo pipefail
           cat .agent-payload/governance.part* > /tmp/governance-fixes.b64
           base64 --decode /tmp/governance-fixes.b64 > /tmp/governance-fixes.tar.gz
-          sha256sum /tmp/governance-fixes.tar.gz
-          tar -tzf /tmp/governance-fixes.tar.gz
+          echo "dda0bad52ba9ba2783266e820fd7e5f7a2aa3931a85d500e3e70e6113f4480fc  /tmp/governance-fixes.tar.gz" | sha256sum --check
           mkdir -p /tmp/governance-fixes
           tar -xzf /tmp/governance-fixes.tar.gz -C /tmp/governance-fixes
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/governance-fixes/backend/inventory/views/common.py')
+          text = path.read_text()
+          if 'def error_detail' not in text:
+              marker = 'from ..services import audit\n\n\n'
+              helper = '''from ..services import audit
+
+
+def error_detail(exc):
+    if hasattr(exc, "message_dict"):
+        return exc.message_dict
+    return getattr(exc, "messages", [str(exc)])
+
+
+'''
+              text = text.replace(marker, helper)
+              path.write_text(text)
+          PY
 
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
