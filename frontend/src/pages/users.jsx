@@ -33,7 +33,12 @@ const EMPTY_USER = {
 };
 
 function isActive(row) {
-  return Boolean(row.is_active && row.profile?.active);
+  if (typeof row.effective_active === "boolean") return row.effective_active;
+  return Boolean(row.is_active && (row.profile?.active ?? true));
+}
+
+function effectiveRole(row) {
+  return row.effective_role || row.profile?.role || "OPERATOR";
 }
 
 export function UsersPage({ notify, me }) {
@@ -91,7 +96,7 @@ export function UsersPage({ notify, me }) {
       else await api.post("users/", payload);
       notify(form.id ? "Usuário atualizado com sucesso." : "Usuário criado com sucesso.");
       setForm(null);
-      list.reload();
+      await list.reload();
     } catch (error) {
       const message = getError(error);
       setFormError(message);
@@ -106,10 +111,11 @@ export function UsersPage({ notify, me }) {
     setActionBusy(true);
     try {
       const activate = !isActive(pendingAction);
-      await api.post(`users/${pendingAction.id}/${activate ? "activate" : "deactivate"}/`);
+      const response = await api.post(`users/${pendingAction.id}/${activate ? "activate" : "deactivate"}/`);
+      list.replaceRow(response.data);
       notify(`Usuário ${activate ? "ativado" : "inativado"} com sucesso.`);
       setPendingAction(null);
-      list.reload();
+      await list.reload();
     } catch (error) {
       notify(getError(error), "error");
     } finally {
@@ -157,8 +163,8 @@ export function UsersPage({ notify, me }) {
               label: "Perfil de acesso",
               render: (row) => (
                 <StatusBadge
-                  value={row.profile?.role}
-                  label={row.profile?.role === "ADMIN" ? "Administrador" : "Operador de estoque"}
+                  value={effectiveRole(row)}
+                  label={effectiveRole(row) === "ADMIN" ? "Administrador" : "Operador de estoque"}
                 />
               ),
             },

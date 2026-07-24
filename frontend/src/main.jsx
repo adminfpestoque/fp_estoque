@@ -16,6 +16,9 @@ import { NotificationsPage } from "./pages/notifications.jsx";
 import { ReportsPage } from "./pages/reports.jsx";
 import { UsersPage } from "./pages/users.jsx";
 import { SettingsPage } from "./pages/settings.jsx";
+import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
+
+applyPreferences(loadStoredPreferences());
 
 function App() {
   const [logged, setLogged] = useState(Boolean(localStorage.getItem("fp_access")));
@@ -38,6 +41,8 @@ function App() {
   async function loadMe() {
     try {
       const response = await api.get("users/me/");
+      const preferences = normalizePreferences(response.data.profile || {});
+      applyAndStorePreferences(preferences);
       setMe(response.data);
     } catch {
       clearSession();
@@ -103,7 +108,7 @@ function App() {
     notifications: <NotificationsPage notify={notify} onChanged={loadNotifications} />,
     reports: <ReportsPage notify={notify} me={me} />,
     users: <UsersPage notify={notify} me={me} />,
-    settings: <SettingsPage notify={notify} />,
+    settings: <SettingsPage notify={notify} me={me} onMeChanged={setMe} />,
   };
 
   return (
