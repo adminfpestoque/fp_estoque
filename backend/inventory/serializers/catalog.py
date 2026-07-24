@@ -93,11 +93,23 @@ class ProductSerializer(serializers.ModelSerializer):
     lots_count = serializers.IntegerField(read_only=True)
     supplier_links = ProductSupplierSerializer(many=True, read_only=True)
     package_description = serializers.CharField(read_only=True)
+    deleted_by_name = serializers.CharField(
+        source="deleted_by.username", read_only=True, allow_null=True
+    )
+    is_deleted = serializers.BooleanField(read_only=True)
+    display_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = Product
         fields = "__all__"
-        read_only_fields = ["stock", "created_at", "updated_at"]
+        read_only_fields = [
+            "stock",
+            "deleted_at",
+            "deleted_by",
+            "deletion_reason",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate_code(self, value):
         return value.strip()
@@ -123,6 +135,10 @@ class ProductSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
+        if instance.is_deleted:
+            raise serializers.ValidationError(
+                "Um produto excluído é mantido apenas para histórico e não pode ser alterado."
+            )
         if not validated_data.get("code"):
             validated_data.pop("code", None)
         validated_data["unit"] = "UN"

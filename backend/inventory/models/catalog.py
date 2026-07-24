@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -81,6 +82,15 @@ class Product(TimeStamped):
     location = models.CharField(max_length=100, blank=True)
     image_url = models.URLField(blank=True)
     active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="deleted_products",
+    )
+    deletion_reason = models.TextField(blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -102,6 +112,16 @@ class Product(TimeStamped):
                 name="inventory_product_nonnegative_values",
             )
         ]
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
+
+    @property
+    def display_status(self):
+        if self.is_deleted:
+            return "Excluído"
+        return "Ativo" if self.active else "Inativo"
 
     @property
     def package_description(self):

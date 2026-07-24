@@ -167,6 +167,20 @@ class ProductViewSet(BaseViewSet):
     def after_activation_change(self, instance, active):
         refresh_alerts(notify=True)
 
+    def _set_activation(self, request, active):
+        product = self.get_object()
+        if product.is_deleted:
+            return Response(
+                {
+                    "detail": (
+                        "Este produto foi excluído e permanece disponível somente para histórico. "
+                        "Não é possível ativá-lo, inativá-lo ou editá-lo."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super()._set_activation(request, active)
+
     @staticmethod
     def _deletion_blockers(product):
         blockers = []
@@ -249,13 +263,16 @@ class ProductViewSet(BaseViewSet):
 
     def destroy(self, request, *args, **kwargs):
         product = self.get_object()
+        if product.is_deleted:
+            return Response(self.get_serializer(product).data)
+
         blockers = self._deletion_blockers(product)
         if blockers:
             return Response(
                 {
                     "detail": (
-                        "Este produto possui dados históricos e não pode ser excluído permanentemente. "
-                        "Esses registros precisam ser preservados para manter a rastreabilidade do estoque."
+                        "Este produto ainda possui estoque ou vínculos operacionais e não pode ser excluído. "
+                        "Exclua ou regularize os registros relacionados antes de continuar."
                     ),
                     "blockers": blockers,
                     "can_deactivate": product.active,
@@ -263,31 +280,31 @@ class ProductViewSet(BaseViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        product_id = product.pk
-        metadata = {"product_id": product_id, "code": product.code, "name": product.name}
-        try:
-            with transaction.atomic():
-                audit(
-                    request.user,
-                    "DELETE",
-                    product,
-                    "Produto excluído permanentemente.",
-                    metadata=metadata,
-                )
-                product.delete()
-        except (ProtectedError, RestrictedError):
-            return Response(
-                {
-                    "detail": (
-                        "Este produto possui vínculos protegidos e não pode ser excluído. "
-                        "Utilize a ação de inativar."
-                    )
-                },
-                status=status.HTTP_409_CONFLICT,
+        metadata = {"product_id": product.pk, "code": product.code, "name": product.name}
+        with transaction.atomic():
+            product.active = False
+            product.deleted_at = timezone.now()
+            product.deleted_by = request.user
+            product.deletion_reason = str(request.data.get("reason") or "").strip()
+            product.save(
+                update_fields=[
+                    "active",
+                    "deleted_at",
+                    "deleted_by",
+                    "deletion_reason",
+                    "updated_at",
+                ]
+            )
+            audit(
+                request.user,
+                "DELETE",
+                product,
+                "Produto excluído do uso operacional e mantido no histórico.",
+                metadata=metadata,
             )
 
         refresh_alerts(notify=True)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(product).data)
 
     def get_queryset(self):
         qs = (
@@ -295,6 +312,20 @@ class ProductViewSet(BaseViewSet):
             .prefetch_related("supplier_links__supplier")
             .annotate(lots_count=Count("lots", distinct=True))
         )
+        deleted = str(self.request.query_params.get("deleted") or "").lower()
+        detail_actions = {
+            "retrieve",
+            "update",
+            "partial_update",
+            "destroy",
+            "activate",
+            "deactivate",
+        }
+        if deleted == "true":
+            qs = qs.filter(deleted_at__isnull=False)
+        elif deleted != "all" and getattr(self, "action", None) not in detail_actions:
+            qs = qs.filter(deleted_at__isnull=True)
+
         level = self.request.query_params.get("stock_level")
         if level == "low":
             qs = qs.filter(stock__lte=F("minimum_stock"), stock__gt=0)
@@ -306,7 +337,11 @@ class ProductViewSet(BaseViewSet):
 
     @action(detail=False, methods=["get"])
     def low_stock(self, request):
-        qs = self.filter_queryset(self.get_queryset().filter(stock__lte=F("minimum_stock")))
+        qs = self.filter_queryset(
+            self.get_queryset().filter(
+                active=True, deleted_at__isnull=True, stock__lte=F("minimum_stock")
+            )
+        )
         page = self.paginate_queryset(qs)
         serializer = self.get_serializer(page if page is not None else qs, many=True)
         return (
@@ -323,7 +358,9 @@ class ProductViewSet(BaseViewSet):
                 {"detail": "Informe o código de barras."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        product = self.get_queryset().filter(barcode=value).first()
+        product = self.get_queryset().filter(
+            barcode=value, active=True, deleted_at__isnull=True
+        ).first()
         if not product:
             raise Http404
         return Response(self.get_serializer(product).data)

@@ -76,7 +76,7 @@ class ProductTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("code", response.data)
         
-    def test_delete_product_permanently_when_it_has_no_stock_or_history(self):
+    def test_delete_product_keeps_it_in_history_when_it_has_no_stock_or_links(self):
         product = Product.objects.create(
             code="REF-002",
             name="Pepsi 2L",
@@ -87,8 +87,12 @@ class ProductTest(TestCase):
 
         response = self.client.delete(f"/api/products/{product.id}/")
 
-        self.assertEqual(response.status_code, 204, getattr(response, "data", None))
-        self.assertFalse(Product.objects.filter(id=product.id).exists())
+        self.assertEqual(response.status_code, 200, response.data)
+        product.refresh_from_db()
+        self.assertTrue(Product.objects.filter(id=product.id).exists())
+        self.assertTrue(product.is_deleted)
+        self.assertFalse(product.active)
+        self.assertEqual(response.data["display_status"], "Excluído")
         
     def test_cannot_create_product_with_maximum_stock_less_than_minimum(self):
         response = self.client.post(

@@ -191,7 +191,7 @@ class DocumentHistoryTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    def test_product_can_be_permanently_deleted_after_documents_are_soft_deleted(self):
+    def test_product_is_soft_deleted_after_documents_are_soft_deleted(self):
         entry = self.create_confirmed_entry(quantity=5)
         output = self.create_confirmed_output(quantity=5)
         self.assertEqual(self.product.stock, Decimal("0"))
@@ -204,22 +204,32 @@ class DocumentHistoryTest(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock, Decimal("0"))
 
-        product_delete = self.client.delete(f"/api/products/{self.product.id}/")
-        self.assertEqual(product_delete.status_code, 204, getattr(product_delete, "data", None))
-        self.assertFalse(Product.objects.filter(pk=self.product.id).exists())
+        product_delete = self.client.delete(
+            f"/api/products/{self.product.id}/",
+            {"reason": "Produto descontinuado"},
+            format="json",
+        )
+        self.assertEqual(product_delete.status_code, 200, product_delete.data)
+
+        self.product.refresh_from_db()
+        self.assertTrue(Product.objects.filter(pk=self.product.id).exists())
+        self.assertTrue(self.product.is_deleted)
+        self.assertFalse(self.product.active)
+        self.assertEqual(self.product.deletion_reason, "Produto descontinuado")
+        self.assertEqual(product_delete.data["display_status"], "Excluído")
 
         entry.refresh_from_db()
         output.refresh_from_db()
         entry_item = entry.items.get()
         output_item = output.items.get()
-        self.assertIsNone(entry_item.product_id)
-        self.assertIsNone(output_item.product_id)
+        self.assertEqual(entry_item.product_id, self.product.id)
+        self.assertEqual(output_item.product_id, self.product.id)
         self.assertEqual(entry_item.product_name_snapshot, "Produto histórico")
         self.assertEqual(output_item.product_name_snapshot, "Produto histórico")
         self.assertTrue(entry.is_deleted)
         self.assertTrue(output.is_deleted)
-        self.assertTrue(Movement.objects.filter(product__isnull=True).exists())
-        self.assertTrue(Lot.objects.filter(product__isnull=True, product_name_snapshot="Produto histórico").exists())
+        self.assertTrue(Movement.objects.filter(product=self.product).exists())
+        self.assertTrue(Lot.objects.filter(product=self.product).exists())
 
     def test_product_remains_blocked_while_document_is_not_deleted(self):
         entry = self.create_confirmed_entry(quantity=5)

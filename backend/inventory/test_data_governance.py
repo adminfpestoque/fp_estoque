@@ -77,6 +77,46 @@ class DataGovernanceTests(TestCase):
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
         self.assertIn("lots", [item["code"] for item in response.data["blockers"]])
 
+    def test_product_without_blockers_is_soft_deleted_and_kept_in_history(self):
+        product = self.create_product()
+
+        response = self.client.delete(
+            f"/api/products/{product.id}/",
+            {"reason": "Cadastro duplicado"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        product.refresh_from_db()
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+        self.assertTrue(product.is_deleted)
+        self.assertFalse(product.active)
+        self.assertEqual(product.deleted_by, self.admin)
+        self.assertEqual(product.deletion_reason, "Cadastro duplicado")
+        self.assertEqual(response.data["display_status"], "Excluído")
+
+        deleted_list = self.client.get("/api/products/", {"deleted": "true"})
+        self.assertEqual(deleted_list.status_code, 200, deleted_list.data)
+        rows = deleted_list.data["results"] if isinstance(deleted_list.data, dict) else deleted_list.data
+        self.assertIn(product.id, [row["id"] for row in rows])
+
+    def test_deleted_product_cannot_be_reactivated_or_edited(self):
+        product = self.create_product()
+        delete_response = self.client.delete(f"/api/products/{product.id}/")
+        self.assertEqual(delete_response.status_code, 200, delete_response.data)
+
+        activate = self.client.post(f"/api/products/{product.id}/activate/")
+        self.assertEqual(activate.status_code, 400, activate.data)
+
+        update = self.client.patch(
+            f"/api/products/{product.id}/",
+            {"name": "Nome alterado"},
+            format="json",
+        )
+        self.assertEqual(update.status_code, 400, update.data)
+        product.refresh_from_db()
+        self.assertEqual(product.name, "Produto de governança")
+
     def test_governance_records_cannot_be_deleted(self):
         category_response = self.client.delete(f"/api/categories/{self.category.id}/")
         supplier_response = self.client.delete(f"/api/suppliers/{self.supplier.id}/")
