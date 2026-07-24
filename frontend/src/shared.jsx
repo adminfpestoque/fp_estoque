@@ -74,6 +74,83 @@ api.interceptors.response.use(
 
 export const unwrap = (payload) => payload?.results || payload || [];
 
+const FIELD_LABELS = {
+  code: "Código interno",
+  sku: "SKU",
+  barcode: "Código de barras",
+  name: "Nome",
+  description: "Descrição",
+  category: "Categoria",
+  supplier: "Fornecedor",
+  brand: "Marca",
+  package_type: "Tipo de embalagem",
+  package_quantity: "Quantidade por embalagem",
+  volume: "Volume",
+  volume_unit: "Unidade de medida",
+  unit: "Unidade de estoque",
+  cost_price: "Preço de custo",
+  sale_price: "Preço de venda",
+  minimum_stock: "Estoque mínimo",
+  maximum_stock: "Estoque máximo",
+  document: "CNPJ ou CPF",
+  state_registration: "Inscrição estadual",
+  contact_name: "Responsável",
+  phone: "Telefone do responsável",
+  whatsapp: "WhatsApp do responsável",
+  email: "E-mail do responsável",
+  city: "Cidade",
+  state: "Estado (UF)",
+  address: "Endereço",
+  address_number: "Número",
+  district: "Bairro",
+  quantity: "Quantidade",
+  reason: "Motivo",
+  justification: "Justificativa",
+  password: "Senha",
+  username: "Usuário",
+};
+
+const STATUS_LABELS = {
+  ACTIVE: "Ativo",
+  INACTIVE: "Inativo",
+  NORMAL: "Normal",
+  LOW: "Estoque baixo",
+  OUT: "Sem estoque",
+  DRAFT: "Rascunho",
+  CONFIRMED: "Confirmado",
+  CANCELLED: "Cancelado",
+  OPEN: "Aberto",
+  WAITING: "Aguardando confirmação",
+  DONE: "Concluído",
+  AVAILABLE: "Disponível",
+  EMPTY: "Esgotado",
+  EXPIRED: "Vencido",
+  INFO: "Informativo",
+  WARNING: "Atenção",
+  CRITICAL: "Crítico",
+  POSITIVE: "Positivo",
+  NEGATIVE: "Negativo",
+  ENTRY: "Entrada",
+  OUTPUT: "Saída",
+  ADJ_IN: "Ajuste positivo",
+  ADJ_OUT: "Ajuste negativo",
+  REV_IN: "Estorno positivo",
+  REV_OUT: "Estorno negativo",
+  TRANSFER: "Transferência",
+  LOSS: "Perda",
+  DAMAGE: "Avaria",
+  INVENTORY: "Inventário",
+};
+
+function translatedFieldName(key) {
+  return FIELD_LABELS[key] || String(key).replaceAll("_", " ");
+}
+
+export function translateStatus(value) {
+  const key = String(value || "").toUpperCase();
+  return STATUS_LABELS[key] || value;
+}
+
 export function parseLocalizedNumber(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   let text = String(value ?? "").trim().replace(/\s/g, "");
@@ -138,7 +215,7 @@ function flattenError(value, prefix = "") {
   if (typeof value === "object") {
     return Object.entries(value)
       .filter(([key]) => key !== "status_code")
-      .flatMap(([key, item]) => flattenError(item, key === "non_field_errors" ? prefix : key));
+      .flatMap(([key, item]) => flattenError(item, key === "non_field_errors" ? prefix : translatedFieldName(key)));
   }
   return [String(value)];
 }
@@ -206,7 +283,7 @@ export function StatusBadge({ value, label }) {
       : normalized.includes("draft") || normalized.includes("open") || normalized.includes("waiting") || normalized.includes("warning") || normalized.includes("low")
         ? "warning"
         : "neutral";
-  return <span className={`badge badge-${tone}`}>{label || value}</span>;
+  return <span className={`badge badge-${tone}`}>{label || translateStatus(value)}</span>;
 }
 
 export {
