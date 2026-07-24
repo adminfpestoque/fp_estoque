@@ -107,76 +107,86 @@ def _build_alert_candidates():
     limit = today + timedelta(days=days)
     candidates = []
 
-    for product in Product.objects.filter(active=True):
-        if product.stock <= 0:
-            candidates.append(
-                {
-                    "type": Alert.OUT_OF_STOCK,
-                    "level": Alert.CRITICAL,
-                    "product": product,
-                    "message": f"{product.name} está sem estoque.",
-                }
+    if SystemSetting.get_bool("stock_alerts_enabled", True):
+        for product in Product.objects.filter(active=True, deleted_at__isnull=True):
+            if product.stock <= 0:
+                candidates.append(
+                    {
+                        "type": Alert.OUT_OF_STOCK,
+                        "level": Alert.CRITICAL,
+                        "product": product,
+                        "message": f"{product.name} está sem estoque.",
+                    }
+                )
+            elif product.stock <= product.minimum_stock:
+                candidates.append(
+                    {
+                        "type": Alert.LOW_STOCK,
+                        "level": Alert.WARNING,
+                        "product": product,
+                        "message": (
+                            f"{product.name} atingiu o estoque mínimo "
+                            f"({int(product.stock)} unidade(s))."
+                        ),
+                    }
+                )
+
+    if SystemSetting.get_bool("expiration_alerts_enabled", True):
+        lots = Lot.objects.select_related("product").filter(
+            active=True,
+            quantity__gt=0,
+            product__active=True,
+            product__deleted_at__isnull=True,
+        )
+        for lot in lots:
+            if lot.expiration_date and lot.expiration_date < today:
+                candidates.append(
+                    {
+                        "type": Alert.EXPIRED,
+                        "level": Alert.CRITICAL,
+                        "product": lot.product,
+                        "lot": lot,
+                        "message": f"O lote {lot.number} de {lot.product_name} está vencido.",
+                    }
+                )
+            elif lot.expiration_date and lot.expiration_date <= limit:
+                candidates.append(
+                    {
+                        "type": Alert.EXPIRING,
+                        "level": Alert.WARNING,
+                        "product": lot.product,
+                        "lot": lot,
+                        "message": (
+                            f"O lote {lot.number} de {lot.product_name} vence em "
+                            f"{lot.expiration_date:%d/%m/%Y}."
+                        ),
+                    }
+                )
+
+    if SystemSetting.get_bool("inventory_divergence_alerts_enabled", True):
+        divergence_items = (
+            InventoryItem.objects.select_related("inventory", "product")
+            .filter(
+                counted=True,
+                inventory__status__in=["OPEN", "WAITING"],
+                product__active=True,
+                product__deleted_at__isnull=True,
             )
-        elif product.stock <= product.minimum_stock:
+            .exclude(system_quantity=F("counted_quantity"))
+        )
+        for item in divergence_items:
             candidates.append(
                 {
-                    "type": Alert.LOW_STOCK,
+                    "type": Alert.INVENTORY_DIVERGENCE,
                     "level": Alert.WARNING,
-                    "product": product,
+                    "product": item.product,
+                    "inventory": item.inventory,
                     "message": (
-                        f"{product.name} atingiu o estoque mínimo "
-                        f"({int(product.stock)} unidade(s))."
+                        f"Divergência de {int(item.difference)} unidade(s) em "
+                        f"{item.product.name} no inventário {item.inventory.number}."
                     ),
                 }
             )
-
-    lots = Lot.objects.select_related("product").filter(active=True, quantity__gt=0)
-    for lot in lots:
-        if lot.expiration_date and lot.expiration_date < today:
-            candidates.append(
-                {
-                    "type": Alert.EXPIRED,
-                    "level": Alert.CRITICAL,
-                    "product": lot.product,
-                    "lot": lot,
-                    "message": f"O lote {lot.number} de {lot.product_name} está vencido.",
-                }
-            )
-        elif lot.expiration_date and lot.expiration_date <= limit:
-            candidates.append(
-                {
-                    "type": Alert.EXPIRING,
-                    "level": Alert.WARNING,
-                    "product": lot.product,
-                    "lot": lot,
-                    "message": (
-                        f"O lote {lot.number} de {lot.product_name} vence em "
-                        f"{lot.expiration_date:%d/%m/%Y}."
-                    ),
-                }
-            )
-
-    divergence_items = (
-        InventoryItem.objects.select_related("inventory", "product")
-        .filter(
-            counted=True,
-            inventory__status__in=["OPEN", "WAITING"],
-        )
-        .exclude(system_quantity=F("counted_quantity"))
-    )
-    for item in divergence_items:
-        candidates.append(
-            {
-                "type": Alert.INVENTORY_DIVERGENCE,
-                "level": Alert.WARNING,
-                "product": item.product,
-                "inventory": item.inventory,
-                "message": (
-                    f"Divergência de {int(item.difference)} unidade(s) em "
-                    f"{item.product.name} no inventário {item.inventory.number}."
-                ),
-            }
-        )
 
     return candidates
 

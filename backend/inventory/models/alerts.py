@@ -78,3 +78,15 @@ class SystemSetting(TimeStamped):
             return int(cls.objects.get(key=key).value)
         except (cls.DoesNotExist, TypeError, ValueError):
             return default
+
+    @classmethod
+    def get_bool(cls, key: str, default: bool = True) -> bool:
+        try:
+            value = str(cls.objects.get(key=key).value).strip().lower()
+        except cls.DoesNotExist:
+            return default
+        if value in {"1", "true", "sim", "yes", "on"}:
+            return True
+        if value in {"0", "false", "não", "nao", "no", "off"}:
+            return False
+        return default

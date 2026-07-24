@@ -170,7 +170,35 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 
 class SystemSettingSerializer(serializers.ModelSerializer):
+    BOOLEAN_KEYS = {
+        "stock_alerts_enabled",
+        "expiration_alerts_enabled",
+        "inventory_divergence_alerts_enabled",
+    }
+
     class Meta:
         model = SystemSetting
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
+
+    def validate(self, attrs):
+        key = attrs.get("key", getattr(self.instance, "key", ""))
+        value = str(attrs.get("value", getattr(self.instance, "value", ""))).strip()
+        if not key:
+            raise serializers.ValidationError({"key": "Informe a chave da configuração."})
+        if key in self.BOOLEAN_KEYS:
+            normalized = value.lower()
+            if normalized not in {"true", "false", "1", "0", "sim", "não", "nao"}:
+                raise serializers.ValidationError({"value": "Use verdadeiro ou falso para esta configuração."})
+            attrs["value"] = "true" if normalized in {"true", "1", "sim"} else "false"
+        elif key == "expiration_alert_days":
+            try:
+                days = int(value)
+            except (TypeError, ValueError) as exc:
+                raise serializers.ValidationError({"value": "Informe uma quantidade inteira de dias."}) from exc
+            if not 1 <= days <= 365:
+                raise serializers.ValidationError({"value": "Informe um valor entre 1 e 365 dias."})
+            attrs["value"] = str(days)
+        elif not value:
+            raise serializers.ValidationError({"value": "Informe um valor."})
+        return attrs

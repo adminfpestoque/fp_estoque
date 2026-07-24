@@ -19,6 +19,7 @@ from ..serializers import (
     ProductSerializer,
     SupplierSerializer,
     UserSerializer,
+    UserProfileSerializer,
 )
 from ..services import audit, refresh_alerts
 from .common import BaseViewSet
@@ -43,13 +44,39 @@ class UserViewSet(BaseViewSet):
     ordering = ["username"]
     governance_name = "usuário"
 
-    @action(detail=False, methods=["get"], permission_classes=[IsInventoryUser])
+    @action(detail=False, methods=["get", "patch"], permission_classes=[IsInventoryUser])
     def me(self, request):
+        if request.method == "PATCH":
+            allowed = {"theme", "font_scale", "reduced_motion", "enhanced_focus"}
+            unknown = set(request.data) - allowed
+            if unknown:
+                return Response(
+                    {"detail": "Apenas preferências de aparência e acessibilidade podem ser alteradas aqui."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            profile, _ = UserProfile.objects.get_or_create(
+                user=request.user,
+                defaults={"full_name": request.user.get_full_name() or request.user.username},
+            )
+            serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            audit(
+                request.user,
+                "UPDATE_ACCESSIBILITY",
+                request.user,
+                "Preferências de aparência e acessibilidade atualizadas.",
+                metadata={key: serializer.validated_data.get(key) for key in allowed if key in serializer.validated_data},
+            )
+            request.user.refresh_from_db()
         return Response(MeSerializer(request.user, context={"request": request}).data)
 
     def _set_user_activation(self, request, active):
         user = self.get_object()
-        profile = getattr(user, "inventory_profile", None)
+        profile, _ = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={"full_name": user.get_full_name() or user.username},
+        )
 
         if not active and user.pk == request.user.pk:
             return Response(
@@ -57,9 +84,7 @@ class UserViewSet(BaseViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        target_is_admin = bool(
-            user.is_superuser or (profile and profile.role == UserProfile.ADMIN)
-        )
+        target_is_admin = bool(user.is_superuser or profile.role == UserProfile.ADMIN)
         if not active and target_is_admin:
             has_other_admin = (
                 User.objects.filter(is_active=True)
@@ -79,14 +104,12 @@ class UserViewSet(BaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        changed = user.is_active != active or bool(profile and profile.active != active)
-        if changed:
+        if user.is_active != active or profile.active != active:
             with transaction.atomic():
                 user.is_active = active
                 user.save(update_fields=["is_active"])
-                if profile:
-                    profile.active = active
-                    profile.save(update_fields=["active", "updated_at"])
+                profile.active = active
+                profile.save(update_fields=["active", "updated_at"])
                 audit(
                     request.user,
                     "ACTIVATE" if active else "DEACTIVATE",
