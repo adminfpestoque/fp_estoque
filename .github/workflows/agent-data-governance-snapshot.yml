@@ -27,6 +27,7 @@ jobs:
           mkdir -p /tmp/governance-fixes
           tar -xzf /tmp/governance-fixes.tar.gz -C /tmp/governance-fixes
           cp .agent-payload/common-fixed.py /tmp/common-fixed.py
+          cp .agent-payload/test-categories-fixed.py /tmp/test-categories-fixed.py
 
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
@@ -38,12 +39,14 @@ jobs:
           cp /tmp/governance-fixes/backend/inventory/permissions.py backend/inventory/permissions.py
           cp /tmp/governance-fixes/backend/inventory/test_products.py backend/inventory/test_products.py
           cp /tmp/governance-fixes/backend/inventory/test_data_governance.py backend/inventory/test_data_governance.py
+          cp /tmp/test-categories-fixed.py backend/inventory/test_categories.py
           git add \
             backend/inventory/views/common.py \
             backend/inventory/views/catalog.py \
             backend/inventory/permissions.py \
             backend/inventory/test_products.py \
-            backend/inventory/test_data_governance.py
+            backend/inventory/test_data_governance.py \
+            backend/inventory/test_categories.py
           git commit -m "feat: enforce data governance deletion policies"
 
           cp /tmp/governance-fixes/frontend/src/shared.jsx frontend/src/shared.jsx
