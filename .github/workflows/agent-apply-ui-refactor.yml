@@ -1,0 +1,126 @@
+name: Agent apply Portuguese UI refactor
+
+on:
+  push:
+    branches:
+      - agent/ui-portuguese-refactor
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout technical payload
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild clean commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .agent-payload/ui-refactor.part* > /tmp/ui-refactor.b64
+          base64 --decode /tmp/ui-refactor.b64 > /tmp/ui-refactor.tar.gz
+          echo "dd48f1eac4312ad49d0bda73f1b81b4e27c5a82be24fe64cd00cc49a7a786b90  /tmp/ui-refactor.tar.gz" | sha256sum --check
+          mkdir -p /tmp/ui-refactor
+          tar -xzf /tmp/ui-refactor.tar.gz -C /tmp/ui-refactor
+
+          git config user.name "adminfpestoque"
+          git config user.email "adminfpestoque@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B agent/ui-portuguese-clean origin/main
+
+          mkdir -p backend/inventory/models backend/inventory/serializers backend/inventory/migrations frontend/src/pages frontend/src/styles
+          cp /tmp/ui-refactor/backend/inventory/models/catalog.py backend/inventory/models/catalog.py
+          cp /tmp/ui-refactor/backend/inventory/serializers/catalog.py backend/inventory/serializers/catalog.py
+          cp /tmp/ui-refactor/backend/inventory/migrations/0005_product_volume.py backend/inventory/migrations/0005_product_volume.py
+          cp /tmp/ui-refactor/backend/inventory/test_products.py backend/inventory/test_products.py
+          cp /tmp/ui-refactor/frontend/src/brazilLocations.js frontend/src/brazilLocations.js
+          cp /tmp/ui-refactor/frontend/src/pages/products.jsx frontend/src/pages/products.jsx
+          cp /tmp/ui-refactor/frontend/src/pages/suppliers.jsx frontend/src/pages/suppliers.jsx
+          git add \
+            backend/inventory/models/catalog.py \
+            backend/inventory/serializers/catalog.py \
+            backend/inventory/migrations/0005_product_volume.py \
+            backend/inventory/test_products.py \
+            frontend/src/brazilLocations.js \
+            frontend/src/pages/products.jsx \
+            frontend/src/pages/suppliers.jsx
+          git commit -m "feat: simplify product and supplier registration"
+
+          cp /tmp/ui-refactor/frontend/src/layout.jsx frontend/src/layout.jsx
+          cp /tmp/ui-refactor/frontend/src/main.jsx frontend/src/main.jsx
+          cp /tmp/ui-refactor/frontend/src/pages/dashboard.jsx frontend/src/pages/dashboard.jsx
+          cp /tmp/ui-refactor/frontend/src/pages/movements.jsx frontend/src/pages/movements.jsx
+          cp /tmp/ui-refactor/frontend/src/pages/reports.jsx frontend/src/pages/reports.jsx
+          cp /tmp/ui-refactor/frontend/src/styles/content.css frontend/src/styles/content.css
+          git add \
+            frontend/src/layout.jsx \
+            frontend/src/main.jsx \
+            frontend/src/pages/dashboard.jsx \
+            frontend/src/pages/movements.jsx \
+            frontend/src/pages/reports.jsx \
+            frontend/src/styles/content.css
+          git commit -m "refactor: consolidate reports and simplify dashboard"
+
+          cp /tmp/ui-refactor/frontend/src/shared.jsx frontend/src/shared.jsx
+          git add frontend/src/shared.jsx
+          git commit -m "fix: translate remaining interface labels"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Check Django migrations
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+        run: |
+          set -euo pipefail
+          python manage.py makemigrations --check --dry-run | tee /tmp/migrations.log
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+        run: |
+          set -euo pipefail
+          python manage.py test inventory -v 2 2>&1 | tee /tmp/backend-tests.log
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/frontend-build.log
+
+      - name: Publish validated commits
+        run: git push origin HEAD:refs/heads/agent/ui-portuguese-clean --force
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: portuguese-ui-validation
+          path: |
+            /tmp/migrations.log
+            /tmp/backend-tests.log
+            /tmp/frontend-build.log
+          retention-days: 2
