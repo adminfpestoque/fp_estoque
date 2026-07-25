@@ -26,6 +26,8 @@ jobs:
           set -euo pipefail
           cp .agent-tools/apply_operational_backend.py /tmp/apply_operational_backend.py
           cp .agent-tools/apply_dark_adjustments_frontend.py /tmp/apply_dark_adjustments_frontend.py
+          sed -i 's|ROOT = Path(__file__).resolve().parents\[1\]|ROOT = Path.cwd()|' /tmp/apply_operational_backend.py
+          sed -i 's|ROOT = Path(__file__).resolve().parents\[1\]|ROOT = Path.cwd()|' /tmp/apply_dark_adjustments_frontend.py
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
           git fetch origin main
