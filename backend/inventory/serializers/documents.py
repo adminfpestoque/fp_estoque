@@ -3,6 +3,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from ..models import (
+    Lot,
     Movement,
     Product,
     StockAdjustment,
@@ -310,11 +311,36 @@ class MovementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(validation_detail(exc)) from exc
 
 
+
 class StockAdjustmentSerializer(serializers.ModelSerializer):
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(deleted_at__isnull=True)
+    )
+    lot = serializers.PrimaryKeyRelatedField(
+        queryset=Lot.objects.filter(product__deleted_at__isnull=True),
+        required=False,
+        allow_null=True,
+    )
     quantity = IntegerQuantityField(min_value=1)
     product_name = serializers.CharField(source="product.name", read_only=True)
-    lot_number = serializers.CharField(source="lot.number", read_only=True)
+    product_code = serializers.CharField(source="product.code", read_only=True)
+    category_name = serializers.CharField(source="product.category.name", read_only=True)
+    product_active = serializers.BooleanField(source="product.active", read_only=True)
+    product_stock = IntegerQuantityField(source="product.stock", read_only=True)
+    lot_number = serializers.CharField(source="lot.number", read_only=True, allow_null=True)
+    lot_quantity = IntegerQuantityField(source="lot.quantity", read_only=True, allow_null=True)
     user_name = serializers.CharField(source="user.username", read_only=True)
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    movement_previous_stock = IntegerQuantityField(
+        source="movement.previous_stock", read_only=True, allow_null=True
+    )
+    movement_final_stock = IntegerQuantityField(
+        source="movement.final_stock", read_only=True, allow_null=True
+    )
+    movement_reversed = serializers.BooleanField(
+        source="movement.reversed", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = StockAdjustment
@@ -330,8 +356,46 @@ class StockAdjustmentSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate(self, attrs):
+        instance = self.instance
+        product = attrs.get("product", getattr(instance, "product", None))
+        lot = attrs.get("lot", getattr(instance, "lot", None))
+        adjustment_type = attrs.get("type", getattr(instance, "type", None))
+        quantity = attrs.get("quantity", getattr(instance, "quantity", None))
+
+        if not product or product.deleted_at is not None:
+            raise serializers.ValidationError(
+                {"product": "Selecione um produto que permaneça cadastrado."}
+            )
+        if lot and lot.product_id != product.id:
+            raise serializers.ValidationError(
+                {"lot": "O lote não pertence ao produto selecionado."}
+            )
+        if adjustment_type == StockAdjustment.NEGATIVE and quantity:
+            if quantity > product.stock:
+                raise serializers.ValidationError(
+                    {"quantity": "A quantidade é maior que o estoque atual do produto."}
+                )
+            if lot and quantity > lot.quantity:
+                raise serializers.ValidationError(
+                    {"quantity": "A quantidade é maior que o saldo disponível no lote."}
+                )
+
+        if "reason" in attrs:
+            attrs["reason"] = attrs["reason"].strip()
+        if "justification" in attrs:
+            attrs["justification"] = attrs["justification"].strip()
+        return attrs
+
     def create(self, validated_data):
         return StockAdjustment.objects.create(
             user=self.context["request"].user,
             **validated_data,
         )
+
+    def update(self, instance, validated_data):
+        if instance.status != StockAdjustment.DRAFT:
+            raise serializers.ValidationError(
+                "Somente ajustes em rascunho podem ser alterados."
+            )
+        return super().update(instance, validated_data)

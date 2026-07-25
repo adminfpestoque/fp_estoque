@@ -65,7 +65,7 @@ class InventoryViewSet(BaseViewSet):
             )
 
         inventory = serializer.save(user=self.request.user)
-        products = Product.objects.filter(active=True).select_related("category")
+        products = Product.objects.filter(deleted_at__isnull=True).select_related("category")
         if inventory.category:
             products = products.filter(category=inventory.category)
         if self.request.data.get("populate", True):
@@ -94,9 +94,11 @@ class InventoryViewSet(BaseViewSet):
                 {"detail": "Somente inventários em andamento aceitam contagens."}
             )
 
-        product = Product.objects.filter(pk=payload.get("product"), active=True).first()
+        product = Product.objects.filter(
+            pk=payload.get("product"), deleted_at__isnull=True
+        ).first()
         if not product:
-            raise DRFValidationError({"product": "Produto não encontrado ou inativo."})
+            raise DRFValidationError({"product": "Produto não encontrado ou excluído."})
         if inventory.category_id and product.category_id != inventory.category_id:
             raise DRFValidationError(
                 {"product": "O produto não pertence à categoria deste inventário."}

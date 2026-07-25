@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Count, Q, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -205,19 +206,90 @@ class MovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
             return Response({"detail": error_detail(exc)}, status=400)
 
 
+
 class StockAdjustmentViewSet(BaseViewSet):
-    queryset = StockAdjustment.objects.select_related("product", "lot", "user", "movement")
+    queryset = StockAdjustment.objects.select_related(
+        "product",
+        "product__category",
+        "lot",
+        "user",
+        "movement",
+    )
     serializer_class = StockAdjustmentSerializer
     permission_classes = [IsAdministrator]
     filterset_fields = ["status", "type", "product", "lot", "user"]
-    search_fields = ["number", "product__name", "reason", "justification"]
-    ordering_fields = ["created_at", "quantity"]
+    search_fields = [
+        "number",
+        "product__name",
+        "product__code",
+        "reason",
+        "justification",
+    ]
+    ordering_fields = ["created_at", "quantity", "confirmed_at", "cancelled_at"]
+    ordering = ["-created_at"]
+    http_method_names = ["get", "post", "put", "patch", "head", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        start = self.request.query_params.get("start_date")
+        end = self.request.query_params.get("end_date")
+        if start:
+            queryset = queryset.filter(created_at__date__gte=start)
+        if end:
+            queryset = queryset.filter(created_at__date__lte=end)
+        return queryset
+
+    def perform_create(self, serializer):
+        adjustment = serializer.save()
+        audit(
+            self.request.user,
+            "CREATE",
+            adjustment,
+            f"Ajuste {adjustment.number} criado como rascunho.",
+        )
+
+    def perform_update(self, serializer):
+        adjustment = serializer.save()
+        audit(
+            self.request.user,
+            "UPDATE",
+            adjustment,
+            f"Rascunho do ajuste {adjustment.number} atualizado.",
+        )
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        values = queryset.aggregate(
+            total=Count("id"),
+            drafts=Count("id", filter=Q(status=StockAdjustment.DRAFT)),
+            confirmed=Count("id", filter=Q(status=StockAdjustment.CONFIRMED)),
+            cancelled=Count("id", filter=Q(status=StockAdjustment.CANCELLED)),
+            positive_quantity=Sum(
+                "quantity",
+                filter=Q(
+                    status=StockAdjustment.CONFIRMED,
+                    type=StockAdjustment.POSITIVE,
+                ),
+            ),
+            negative_quantity=Sum(
+                "quantity",
+                filter=Q(
+                    status=StockAdjustment.CONFIRMED,
+                    type=StockAdjustment.NEGATIVE,
+                ),
+            ),
+        )
+        values["positive_quantity"] = values["positive_quantity"] or 0
+        values["negative_quantity"] = values["negative_quantity"] or 0
+        return Response(values)
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
         adjustment = self.get_object()
         try:
             adjustment.confirm(request.user)
+            adjustment.refresh_from_db()
             refresh_alerts(notify=True)
             audit(request.user, "CONFIRM", adjustment, f"Ajuste {adjustment.number} confirmado.")
             notify_users(
@@ -234,11 +306,12 @@ class StockAdjustmentViewSet(BaseViewSet):
         adjustment = self.get_object()
         try:
             adjustment.cancel(request.user)
+            adjustment.refresh_from_db()
             refresh_alerts(notify=True)
-            audit(request.user, "CANCEL", adjustment, f"Ajuste {adjustment.number} cancelado.")
+            audit(request.user, "CANCEL", adjustment, f"Ajuste {adjustment.number} cancelado e estornado.")
             notify_users(
                 "Ajuste de estoque cancelado",
-                f"O ajuste {adjustment.number} foi cancelado por {request.user.username}.",
+                f"O ajuste {adjustment.number} foi cancelado e estornado por {request.user.username}.",
                 level=Alert.INFO,
             )
             return Response(self.get_serializer(adjustment).data)

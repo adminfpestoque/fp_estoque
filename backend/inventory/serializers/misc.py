@@ -80,7 +80,7 @@ class InventorySerializer(serializers.ModelSerializer):
         return cache
 
     def get_scope_label(self, obj):
-        return obj.category.name if obj.category_id else "Todos os produtos ativos"
+        return obj.category.name if obj.category_id else "Todos os produtos cadastrados"
 
     def get_total_items(self, obj):
         return len(self._items(obj))

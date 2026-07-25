@@ -389,13 +389,62 @@ class ProductViewSet(BaseViewSet):
         return Response(self.get_serializer(product).data)
 
 
+
 class LotViewSet(BaseViewSet):
-    queryset = Lot.objects.select_related("product", "supplier").all()
+    queryset = Lot.objects.select_related("product", "product__category", "supplier").all()
     serializer_class = LotSerializer
     filterset_fields = ["product", "supplier", "active", "expiration_date"]
-    search_fields = ["number", "product__name", "product__code", "product_name_snapshot", "product_code_snapshot", "supplier__name"]
+    search_fields = [
+        "number",
+        "product__name",
+        "product__code",
+        "product_name_snapshot",
+        "product_code_snapshot",
+        "supplier__name",
+    ]
     ordering_fields = ["expiration_date", "quantity", "entry_date", "created_at"]
     http_method_names = ["get", "head", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        include_history = str(
+            self.request.query_params.get("history") or "false"
+        ).lower() in {"true", "1", "yes"}
+        if not include_history:
+            queryset = queryset.filter(
+                product__isnull=False,
+                product__deleted_at__isnull=True,
+            )
+
+        balance = str(self.request.query_params.get("balance") or "").lower()
+        if balance in {"positive", "available", "with_stock"}:
+            queryset = queryset.filter(quantity__gt=0)
+        elif balance in {"empty", "zero"}:
+            queryset = queryset.filter(quantity=0)
+
+        view = str(self.request.query_params.get("view") or "").lower()
+        today = timezone.localdate()
+        if view == "available":
+            queryset = queryset.filter(quantity__gt=0)
+        elif view == "expiring":
+            days = int(
+                self.request.query_params.get("days")
+                or SystemSetting.get_int("expiration_alert_days", 30)
+            )
+            queryset = queryset.filter(
+                quantity__gt=0,
+                expiration_date__gte=today,
+                expiration_date__lte=today + timedelta(days=days),
+            )
+        elif view == "expired":
+            queryset = queryset.filter(
+                quantity__gt=0,
+                expiration_date__lt=today,
+            )
+        elif view == "empty":
+            queryset = queryset.filter(quantity=0)
+
+        return queryset
 
     @action(detail=False, methods=["get"])
     def expiring(self, request):
@@ -404,21 +453,21 @@ class LotViewSet(BaseViewSet):
             or SystemSetting.get_int("expiration_alert_days", 30)
         )
         today = timezone.localdate()
-        qs = self.filter_queryset(
+        queryset = self.filter_queryset(
             self.get_queryset().filter(
                 quantity__gt=0,
                 expiration_date__gte=today,
                 expiration_date__lte=today + timedelta(days=days),
             )
         )
-        return Response(self.get_serializer(qs, many=True).data)
+        return Response(self.get_serializer(queryset, many=True).data)
 
     @action(detail=False, methods=["get"])
     def expired(self, request):
-        qs = self.filter_queryset(
+        queryset = self.filter_queryset(
             self.get_queryset().filter(
                 quantity__gt=0,
                 expiration_date__lt=timezone.localdate(),
             )
         )
-        return Response(self.get_serializer(qs, many=True).data)
+        return Response(self.get_serializer(queryset, many=True).data)

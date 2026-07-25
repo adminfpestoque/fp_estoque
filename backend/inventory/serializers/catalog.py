@@ -161,6 +161,8 @@ class LotSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(read_only=True)
     product_code = serializers.CharField(read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    product_active = serializers.BooleanField(source="product.active", read_only=True, allow_null=True)
+    product_status = serializers.CharField(source="product.display_status", read_only=True, allow_null=True)
     status = serializers.CharField(read_only=True)
     expired = serializers.BooleanField(read_only=True)
 
