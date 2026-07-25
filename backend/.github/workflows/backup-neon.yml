@@ -1,0 +1,89 @@
+name: Backup diário do Neon
+
+on:
+  # Executa automaticamente todos os dias às 03:00
+  # no horário de Fortaleza.
+  schedule:
+    - cron: "0 3 * * *"
+      timezone: "America/Fortaleza"
+
+  # Permite executar manualmente pela aba Actions.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Gerar backup PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Cria um nome diferente para cada backup.
+      - name: Preparar arquivo do backup
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BACKUP_FILE="neon-$(date +'%Y-%m-%d_%H-%M-%S').dump"
+
+          echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
+
+          mkdir -p backups
+
+          echo "Backup que será criado: $BACKUP_FILE"
+
+      # Conecta no Neon e gera o arquivo .dump.
+      - name: Criar backup do banco
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "ERRO: o secret NEON_DATABASE_URL não foi configurado."
+            exit 1
+          fi
+
+          docker run --rm \
+            -e DATABASE_URL \
+            -e BACKUP_FILE \
+            -v "$PWD/backups:/backups" \
+            postgres:18 \
+            sh -c '
+              pg_dump "$DATABASE_URL" \
+                --format=custom \
+                --no-owner \
+                --no-privileges \
+                --file="/backups/$BACKUP_FILE"
+            '
+
+      # Confirma que o arquivo gerado pode ser lido pelo pg_restore.
+      - name: Validar arquivo do backup
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -e BACKUP_FILE \
+            -v "$PWD/backups:/backups" \
+            postgres:18 \
+            sh -c '
+              pg_restore \
+                --list \
+                "/backups/$BACKUP_FILE" \
+                > /dev/null
+            '
+
+          echo "Backup validado com sucesso."
+
+      # Salva o backup dentro da execução do GitHub Actions.
+      - name: Armazenar backup por dois dias
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: backups/${{ env.BACKUP_FILE }}
+          retention-days: 2
+          if-no-files-found: error
