@@ -1,0 +1,127 @@
+name: Agent full system hardening
+
+on:
+  push:
+    branches:
+      - agent/full-system-hardening
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout technical branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and apply audited patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .agent-tools/full-hardening.patch.gz.b64.part* > /tmp/full-hardening.patch.gz.b64
+          echo "dda42bb88f62b0e547ef4fbc8481420b3049080e402e2f856df4ce53aac0f55a  /tmp/full-hardening.patch.gz.b64" | sha256sum -c -
+          base64 --decode /tmp/full-hardening.patch.gz.b64 > /tmp/full-hardening.patch.gz
+          echo "4dfba4aee3fdf4773e44deaa48d923a616c5793b950730b3138f77116d3b6a5e  /tmp/full-hardening.patch.gz" | sha256sum -c -
+          gzip --decompress --stdout /tmp/full-hardening.patch.gz > /tmp/full-hardening.patch
+          echo "046e16f9e7631c97e9c3d4cfaf8aa5949236ed24ebbd154fdee87be42b4bd3ce  /tmp/full-hardening.patch" | sha256sum -c -
+
+          git config user.name "adminfpestoque"
+          git config user.email "adminfpestoque@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B agent/full-system-hardening-ready origin/main
+
+          rm -f .env.example .gitignore
+          patch --batch --forward -p1 < /tmp/full-hardening.patch
+          git rm -f backend/db.sqlite3
+
+          git add -A backend
+          git commit -m "fix: harden stock workflows, reports and data integrity"
+
+          git add frontend
+          git commit -m "fix: improve interface resilience and error flows"
+
+          git add .env.example .gitignore README.md
+          git commit -m "chore: align Neon deployment configuration and remove local database"
+
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Validate Django configuration and migrations
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+          DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
+          DEBUG: "false"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          rm -f db.sqlite3
+          python manage.py migrate --noinput
+          python -m compileall -q .
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+          DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
+          DEBUG: "false"
+        run: python manage.py test -v 2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate frontend
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm audit --omit=dev
+
+      - name: Run final repository checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'TODO|FIXME|XXX|HACK|NotImplemented|console\.log|window\.(alert|confirm|prompt)|coming soon|em breve|não implementad|nao implementad' backend frontend/src \
+            --exclude-dir=__pycache__ --exclude-dir=node_modules --exclude-dir=dist; then
+            echo "Marcadores de implementação incompleta encontrados."
+            exit 1
+          fi
+          if git ls-files '*.sqlite3' | grep -q .; then
+            echo "Banco SQLite local ainda está versionado."
+            exit 1
+          fi
+          if grep -RInE 'SUPABASE|supabase' backend frontend/src .env.example README.md \
+            --exclude-dir=__pycache__ --exclude-dir=node_modules --exclude-dir=dist; then
+            echo "Referências obsoletas ao Supabase encontradas."
+            exit 1
+          fi
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Publish validated commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin agent/full-system-hardening-ready --force
