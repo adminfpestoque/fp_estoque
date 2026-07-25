@@ -388,7 +388,7 @@ export function InventoriesPage({ me, notify }) {
                 value={form.category}
                 onChange={(event) => setForm({ ...form, category: event.target.value })}
               >
-                <option value="">Todos os produtos ativos</option>
+                <option value="">Todos os produtos cadastrados</option>
                 {categories.map((category) => (
                   <option key={category.id} value={category.id}>{category.name}</option>
                 ))}

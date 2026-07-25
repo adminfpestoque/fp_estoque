@@ -71,3 +71,64 @@
 @media (max-width: 430px) {
   .inventory-summary-grid { grid-template-columns: 1fr; }
 }
+
+/* Inventário adaptado aos temas escuros sem superfícies brancas estouradas */
+:root[data-theme="dark"] .inventory-progress,
+:root[data-theme="contrast"] .inventory-progress { background: var(--tone-neutral-bg); }
+
+:root[data-theme="dark"] .inventory-info-box,
+:root[data-theme="contrast"] .inventory-info-box {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-text);
+  border-color: var(--tone-warning-border);
+}
+:root[data-theme="dark"] .inventory-info-box :is(p, svg),
+:root[data-theme="contrast"] .inventory-info-box :is(p, svg) { color: var(--tone-warning-text); }
+
+:root[data-theme="dark"] .inventory-summary-grid > div,
+:root[data-theme="contrast"] .inventory-summary-grid > div {
+  background: var(--surface-subtle);
+  color: var(--text);
+  border-color: var(--border);
+}
+:root[data-theme="dark"] .inventory-summary-grid .positive,
+:root[data-theme="contrast"] .inventory-summary-grid .positive {
+  background: var(--tone-success-bg);
+  border-color: var(--tone-success-border);
+}
+:root[data-theme="dark"] .inventory-summary-grid .positive strong,
+:root[data-theme="contrast"] .inventory-summary-grid .positive strong { color: var(--tone-success-text) !important; }
+:root[data-theme="dark"] .inventory-summary-grid .negative,
+:root[data-theme="contrast"] .inventory-summary-grid .negative {
+  background: var(--tone-danger-bg);
+  border-color: var(--tone-danger-border);
+}
+:root[data-theme="dark"] .inventory-summary-grid .negative strong,
+:root[data-theme="contrast"] .inventory-summary-grid .negative strong { color: var(--tone-danger-text) !important; }
+
+:root[data-theme="dark"] .inventory-progress-wide,
+:root[data-theme="contrast"] .inventory-progress-wide {
+  background: var(--surface-strong);
+  color: var(--surface-strong-text);
+  border: 1px solid var(--border);
+}
+:root[data-theme="dark"] .inventory-progress-wide span,
+:root[data-theme="contrast"] .inventory-progress-wide span { color: var(--surface-strong-muted); }
+
+:root[data-theme="dark"] .inventory-checklist .ok,
+:root[data-theme="contrast"] .inventory-checklist .ok { background: var(--tone-success-bg); color: var(--tone-success-text); border: 1px solid var(--tone-success-border); }
+:root[data-theme="dark"] .inventory-checklist .pending,
+:root[data-theme="contrast"] .inventory-checklist .pending { background: var(--tone-warning-bg); color: var(--tone-warning-text); border: 1px solid var(--tone-warning-border); }
+
+:root[data-theme="dark"] .inventory-items-toolbar,
+:root[data-theme="contrast"] .inventory-items-toolbar { background: var(--surface-subtle); }
+:root[data-theme="dark"] .inventory-table th,
+:root[data-theme="contrast"] .inventory-table th { background: var(--surface-subtle) !important; }
+:root[data-theme="dark"] .inventory-table td,
+:root[data-theme="contrast"] .inventory-table td { background: var(--surface) !important; }
+:root[data-theme="dark"] .inventory-row-divergence td,
+:root[data-theme="contrast"] .inventory-row-divergence td { background: var(--tone-warning-bg) !important; }
+:root[data-theme="dark"] .inventory-reason.invalid,
+:root[data-theme="contrast"] .inventory-reason.invalid { background: var(--tone-danger-bg); border-color: var(--tone-danger-border); }
+:root[data-theme="dark"] .inventory-actions,
+:root[data-theme="contrast"] .inventory-actions { background: var(--sticky-surface); }

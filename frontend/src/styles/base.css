@@ -270,3 +270,99 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 :root[data-theme="contrast"] .badge-success,
 :root[data-theme="contrast"] .badge-warning,
 :root[data-theme="contrast"] .badge-danger { border: 1px solid currentColor; }
+
+/* Paleta semântica refinada para temas escuros */
+:root {
+  --tone-neutral-bg: #e5e7eb;
+  --tone-neutral-text: #374151;
+  --tone-neutral-border: #d1d5db;
+  --tone-success-bg: #dcfce7;
+  --tone-success-text: #166534;
+  --tone-success-border: #bbf7d0;
+  --tone-warning-bg: #fef3c7;
+  --tone-warning-text: #92400e;
+  --tone-warning-border: #fde68a;
+  --tone-danger-bg: #fee2e2;
+  --tone-danger-text: #991b1b;
+  --tone-danger-border: #fecaca;
+  --row-deleted-bg: #f1f3f5;
+  --row-deleted-text: #6b7280;
+  --surface-strong: #111111;
+  --surface-strong-text: #ffffff;
+  --surface-strong-muted: #d1d5db;
+  --sticky-surface: rgba(255, 255, 255, .96);
+}
+
+:root[data-theme="dark"] {
+  --page-bg: #0b0c0f;
+  --surface: #15171b;
+  --surface-subtle: #1d2025;
+  --surface-hover: #242117;
+  --input-bg: #101216;
+  --muted: #9da4af;
+  --border: #343942;
+  --tone-neutral-bg: #262a31;
+  --tone-neutral-text: #c9ced7;
+  --tone-neutral-border: #404650;
+  --tone-success-bg: #14291d;
+  --tone-success-text: #8cdeb0;
+  --tone-success-border: #2b5b3e;
+  --tone-warning-bg: #302711;
+  --tone-warning-text: #f4cf70;
+  --tone-warning-border: #66521f;
+  --tone-danger-bg: #31191c;
+  --tone-danger-text: #ff9b9f;
+  --tone-danger-border: #6b3036;
+  --row-deleted-bg: #1a1d22;
+  --row-deleted-text: #858d99;
+  --surface-strong: #0d0f12;
+  --surface-strong-text: #f6f7f8;
+  --surface-strong-muted: #9da4af;
+  --sticky-surface: rgba(21, 23, 27, .96);
+}
+
+:root[data-theme="contrast"] {
+  --tone-neutral-bg: #111111;
+  --tone-neutral-text: #ffffff;
+  --tone-neutral-border: #ffd400;
+  --tone-success-bg: #06160c;
+  --tone-success-text: #a2ffc3;
+  --tone-success-border: #a2ffc3;
+  --tone-warning-bg: #1b1600;
+  --tone-warning-text: #ffe56b;
+  --tone-warning-border: #ffd400;
+  --tone-danger-bg: #1d0707;
+  --tone-danger-text: #ff9a9a;
+  --tone-danger-border: #ff8080;
+  --row-deleted-bg: #0b0b0b;
+  --row-deleted-text: #c4c4c4;
+  --surface-strong: #000000;
+  --surface-strong-text: #ffffff;
+  --surface-strong-muted: #f0f0f0;
+  --sticky-surface: rgba(0, 0, 0, .97);
+}
+
+:root[data-theme="dark"] :is(.btn-secondary, .pagination button),
+:root[data-theme="contrast"] :is(.btn-secondary, .pagination button) {
+  background: var(--surface-subtle);
+  color: var(--text);
+  border-color: var(--border);
+}
+:root[data-theme="dark"] .btn-success,
+:root[data-theme="contrast"] .btn-success {
+  background: var(--tone-success-bg);
+  color: var(--tone-success-text);
+  border: 1px solid var(--tone-success-border);
+}
+:root[data-theme="dark"] .btn-danger,
+:root[data-theme="contrast"] .btn-danger {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-text);
+  border-color: var(--tone-danger-border);
+}
+:root[data-theme="dark"] .btn-warning,
+:root[data-theme="contrast"] .btn-warning {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-text);
+  border-color: var(--tone-warning-border);
+}
