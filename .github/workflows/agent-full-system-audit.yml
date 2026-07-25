@@ -1,0 +1,107 @@
+name: Agent full system audit
+
+on:
+  push:
+    branches:
+      - agent/full-system-audit
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Run backend diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p audit
+          {
+            echo "## Django check"
+            (cd backend && USE_SQLITE_FOR_TESTS=true python manage.py check) || true
+            echo
+            echo "## Migration check"
+            (cd backend && USE_SQLITE_FOR_TESTS=true python manage.py makemigrations --check --dry-run) || true
+            echo
+            echo "## Backend tests"
+            (cd backend && USE_SQLITE_FOR_TESTS=true python manage.py test) || true
+            echo
+            echo "## Python compile"
+            python -m compileall -q backend || true
+          } 2>&1 | tee audit/backend.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run frontend diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo "## npm ci"
+            (cd frontend && npm ci) || true
+            echo
+            echo "## Production build"
+            (cd frontend && npm run build) || true
+            echo
+            echo "## npm audit (informational)"
+            (cd frontend && npm audit --omit=dev) || true
+          } 2>&1 | tee audit/frontend.txt
+
+      - name: Scan repository for risk markers
+        shell: bash
+        run: |
+          {
+            echo "## Repository files"
+            find backend frontend -type f \
+              -not -path '*/node_modules/*' \
+              -not -path '*/__pycache__/*' \
+              -not -path '*/dist/*' | sort
+            echo
+            echo "## TODO, FIXME, placeholders and unfinished markers"
+            grep -RInE 'TODO|FIXME|XXX|HACK|NotImplemented|pass([[:space:]]|$)|console\.log|window\.(alert|confirm|prompt)|coming soon|em breve|não implementad|nao implementad' backend frontend \
+              --exclude-dir=node_modules --exclude-dir=__pycache__ --exclude-dir=dist || true
+            echo
+            echo "## Broad exception handlers"
+            grep -RInE 'except Exception|catch \([^)]*\)' backend frontend \
+              --exclude-dir=node_modules --exclude-dir=__pycache__ --exclude-dir=dist || true
+          } > audit/risk-markers.txt
+
+      - name: Package repository snapshot
+        shell: bash
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/dist' \
+            --exclude='backend/**/__pycache__' \
+            -czf audit/source.tar.gz \
+            backend frontend README.md 2>/dev/null || \
+          tar --exclude='.git' --exclude='frontend/node_modules' --exclude='frontend/dist' -czf audit/source.tar.gz backend frontend
+
+      - name: Upload audit snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-system-audit-source
+          path: audit/
+          retention-days: 3
