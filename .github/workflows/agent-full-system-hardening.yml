@@ -36,7 +36,7 @@ jobs:
           git fetch origin main
           git checkout -B agent/full-system-hardening-ready origin/main
 
-          rm -f .env.example .gitignore
+          rm -f .env.example .gitignore README.md
           patch --batch --forward -p1 < /tmp/full-hardening.patch
           git rm -f backend/db.sqlite3
 
