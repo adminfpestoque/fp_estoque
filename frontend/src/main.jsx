@@ -16,8 +16,10 @@ import { NotificationsPage } from "./pages/notifications.jsx";
 import { ReportsPage } from "./pages/reports.jsx";
 import { UsersPage } from "./pages/users.jsx";
 import { SettingsPage } from "./pages/settings.jsx";
+import { installReferenceFallbacks } from "./api-fallback.js";
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
+installReferenceFallbacks(api);
 applyPreferences(loadStoredPreferences());
 
 function App() {
