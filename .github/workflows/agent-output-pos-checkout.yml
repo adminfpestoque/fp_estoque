@@ -25,6 +25,9 @@ jobs:
         run: |
           run_patch() {
             set -euo pipefail
+            echo "Part sizes and digests"
+            wc -c .agent-tools/output-pos.patch.gz.b64.part*
+            sha256sum .agent-tools/output-pos.patch.gz.b64.part*
             cat .agent-tools/output-pos.patch.gz.b64.part* > /tmp/output-pos.patch.gz.b64
             echo "Base64 size and digest"
             wc -c /tmp/output-pos.patch.gz.b64
