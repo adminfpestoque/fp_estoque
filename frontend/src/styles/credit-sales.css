@@ -1,0 +1,37 @@
+/* Venda a prazo/fiado: cliente e data prevista para recebimento */
+.credit-due-date-field {
+  padding: 12px;
+  border: 1px solid var(--tone-warning-border);
+  border-radius: 12px;
+  background: var(--tone-warning-bg);
+}
+
+.credit-due-date-field[hidden] {
+  display: none !important;
+}
+
+.credit-due-date-field > span {
+  color: var(--tone-warning-text);
+}
+
+.credit-due-date-field > small {
+  color: var(--tone-warning-text);
+  line-height: 1.4;
+  opacity: .85;
+}
+
+.credit-due-date-field input[type="date"] {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--tone-warning-border);
+}
+
+.checkout-summary .credit-due-date-field {
+  gap: 7px;
+}
+
+@media (max-width: 1250px) {
+  .checkout-summary .credit-due-date-field {
+    max-width: 420px;
+  }
+}
