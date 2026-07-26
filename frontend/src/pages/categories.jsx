@@ -13,6 +13,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  Trash2,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
@@ -21,6 +22,7 @@ export function CategoriesPage({ notify, me }) {
   const list = useList("categories/");
   const [form, setForm] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [busy, setBusy] = useState(false);
 
   function openCategory(row = null) {
@@ -56,6 +58,21 @@ export function CategoriesPage({ notify, me }) {
       await api.post(`categories/${pendingAction.id}/${activate ? "activate" : "deactivate"}/`);
       notify(`Categoria ${activate ? "ativada" : "inativada"} com sucesso.`);
       setPendingAction(null);
+      list.reload();
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteCategory() {
+    if (!pendingDelete) return;
+    setBusy(true);
+    try {
+      await api.delete(`categories/${pendingDelete.id}/`);
+      notify("Categoria apagada com sucesso.");
+      setPendingDelete(null);
       list.reload();
     } catch (error) {
       notify(getError(error), "error");
@@ -115,6 +132,13 @@ export function CategoriesPage({ notify, me }) {
                   >
                     {row.active ? <PowerOff size={16} /> : <Power size={16} />}
                   </button>
+                  <button
+                    className="danger"
+                    onClick={() => setPendingDelete(row)}
+                    title="Apagar categoria"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ) : "—",
             },
@@ -151,6 +175,19 @@ export function CategoriesPage({ notify, me }) {
           busy={busy}
           onClose={() => setPendingAction(null)}
           onConfirm={toggleCategory}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmModal
+          title="Apagar categoria"
+          message={`Apagar permanentemente “${pendingDelete.name}”?`}
+          detail="A categoria será removida definitivamente. Caso esteja vinculada a algum produto, a exclusão será bloqueada e você poderá apenas inativá-la."
+          confirmLabel="Apagar categoria"
+          confirmVariant="danger"
+          busy={busy}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={deleteCategory}
         />
       )}
     </>

@@ -1,5 +1,6 @@
 from .alerts import AlertViewSet, AuditLogViewSet, NotificationViewSet, SystemSettingViewSet
 from .catalog import CategoryViewSet, LotViewSet, PackagingTypeViewSet, ProductViewSet, SupplierViewSet, UserViewSet
+from . import category_delete as _category_delete  # noqa: F401 — habilita exclusão segura de categorias
 from .dashboard import dashboard
 from .documents import MovementViewSet, StockAdjustmentViewSet, StockEntryViewSet, StockOutputViewSet
 from .inventories import InventoryViewSet
