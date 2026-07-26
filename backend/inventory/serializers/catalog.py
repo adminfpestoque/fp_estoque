@@ -19,7 +19,6 @@ from .fields import IntegerQuantityField, MoneyField, NullableUniqueCharField
 
 class PackagingTypeSerializer(serializers.ModelSerializer):
     products_count = serializers.IntegerField(read_only=True, required=False)
-    categories_count = serializers.IntegerField(read_only=True, required=False)
 
     class Meta:
         model = PackagingType
@@ -43,20 +42,10 @@ class PackagingTypeSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    packaging_types = serializers.PrimaryKeyRelatedField(
-        queryset=PackagingType.objects.all(),
-        many=True,
-        required=False,
-    )
-    packaging_type_names = serializers.SerializerMethodField()
-
     class Meta:
         model = Category
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
-
-    def get_packaging_type_names(self, obj):
-        return [item.name for item in obj.packaging_types.all().order_by("name")]
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -212,6 +201,10 @@ class ProductSerializer(serializers.ModelSerializer):
                 return code
 
     def _validate_packaging_options(self, options):
+        if len(options or []) > 1:
+            raise serializers.ValidationError(
+                {"packaging_options": "Cadastre somente um tipo de embalagem adicional por produto."}
+            )
         type_ids = set()
         normalized = []
         defaults = 0
@@ -306,9 +299,6 @@ class ProductSerializer(serializers.ModelSerializer):
         product = super().create(validated_data)
         self._sync_packaging_options(product, packaging_options)
         if packaging_options:
-            product.category.packaging_types.add(
-                *[item["packaging_type"] for item in packaging_options]
-            )
             default_option = product.packaging_options.filter(is_default=True).first()
             if default_option:
                 product.package_type = default_option.display_name
@@ -328,10 +318,6 @@ class ProductSerializer(serializers.ModelSerializer):
         product = super().update(instance, validated_data)
         if packaging_options is not None:
             self._sync_packaging_options(product, packaging_options)
-            if packaging_options:
-                product.category.packaging_types.add(
-                    *[item["packaging_type"] for item in packaging_options]
-                )
             default_option = product.packaging_options.filter(is_default=True).first()
             product.package_type = default_option.display_name if default_option else ""
             product.save(update_fields=["package_type", "updated_at"])
