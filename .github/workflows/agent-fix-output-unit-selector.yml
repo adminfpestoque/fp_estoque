@@ -1,0 +1,73 @@
+name: Agent fix output unit selector
+
+on:
+  push:
+    branches:
+      - agent/output-unit-selector-fix
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout technical branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply fix on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agent-tools/fix_output_unit_selector.py /tmp/fix_output_unit_selector.py
+          git config user.name "adminfpestoque"
+          git config user.email "adminfpestoque@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B agent/output-unit-selector-ready origin/main
+          python /tmp/fix_output_unit_selector.py
+          git add frontend/src/pages/documents.jsx frontend/src/styles/checkout.css
+          git commit -m "fix: simplify output unit selection"
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Validate backend regression suite
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+          DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
+          DEBUG: "false"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r backend/requirements.txt
+          cd backend
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py test -v 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate frontend build
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm audit --omit=dev
+
+      - name: Publish validated commit
+        shell: bash
+        run: git push origin agent/output-unit-selector-ready --force
