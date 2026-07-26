@@ -1,0 +1,108 @@
+name: Agent validate unified packaging
+
+on:
+  push:
+    branches:
+      - agent/unified-packaging-entry
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout technical branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and apply implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .agent-tools/unified-packaging.patch.gz.b64.part* > /tmp/unified-packaging.patch.gz.b64
+          echo "c24346994d476d4911860a86a3ea5c94faf08d6b7db22716a25565802b3156e3  /tmp/unified-packaging.patch.gz.b64" | sha256sum -c -
+          base64 --decode /tmp/unified-packaging.patch.gz.b64 > /tmp/unified-packaging.patch.gz
+          echo "c1e8286062395092c2c4fac41a1a81e1d757b38aa080f92f54ca8bba94a2d066  /tmp/unified-packaging.patch.gz" | sha256sum -c -
+          gzip --decompress --stdout /tmp/unified-packaging.patch.gz > /tmp/unified-packaging.patch
+          echo "7324468662eda4b87ab4b80ddd40ece9252697e7ed079d37da4589caf26ce902  /tmp/unified-packaging.patch" | sha256sum -c -
+
+          git config user.name "adminfpestoque"
+          git config user.email "adminfpestoque@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B agent/unified-packaging-entry-ready origin/main
+          git apply --check /tmp/unified-packaging.patch
+          git apply /tmp/unified-packaging.patch
+
+          git add backend/inventory
+          git commit -m "feat: unify packaging types and stock conversions"
+          git add frontend/src
+          git commit -m "feat: simplify entries and package pricing"
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Validate Django and migrations
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+          DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
+          DEBUG: "false"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          rm -f db.sqlite3
+          python manage.py migrate --noinput
+          python -m compileall -q .
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          USE_SQLITE_FOR_TESTS: "true"
+          DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
+          DEBUG: "false"
+        shell: bash
+        run: |
+          set -o pipefail
+          python manage.py test -v 2 2>&1 | tee /tmp/unified-packaging-backend-tests.txt
+
+      - name: Upload backend diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-packaging-backend-tests
+          path: /tmp/unified-packaging-backend-tests.txt
+          retention-days: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate frontend
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm audit --omit=dev
+
+      - name: Publish validated commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin agent/unified-packaging-entry-ready --force
