@@ -62,12 +62,26 @@ jobs:
           DEBUG: "false"
         shell: bash
         run: |
-          set -euo pipefail
-          python manage.py check
-          python manage.py makemigrations --check --dry-run
-          rm -f db.sqlite3
-          python manage.py migrate --noinput
-          python -m compileall -q .
+          set +e
+          {
+            set -x
+            python manage.py check
+            python manage.py makemigrations --check --dry-run
+            rm -f db.sqlite3
+            python manage.py migrate --noinput
+            python -m compileall -q .
+          } > /tmp/unified-packaging-django.txt 2>&1
+          result=$?
+          cat /tmp/unified-packaging-django.txt
+          exit "$result"
+
+      - name: Upload Django diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-packaging-django
+          path: /tmp/unified-packaging-django.txt
+          retention-days: 1
 
       - name: Run backend tests
         working-directory: backend
