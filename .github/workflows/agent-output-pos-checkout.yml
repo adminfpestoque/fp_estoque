@@ -29,6 +29,7 @@ jobs:
             wc -c .agent-tools/output-pos.patch.gz.b64.part*
             sha256sum .agent-tools/output-pos.patch.gz.b64.part*
             cat .agent-tools/output-pos.patch.gz.b64.part* > /tmp/output-pos.patch.gz.b64
+            cp .agent-tools/output-pos-fix.patch /tmp/output-pos-fix.patch
             echo "Base64 size and digest"
             wc -c /tmp/output-pos.patch.gz.b64
             sha256sum /tmp/output-pos.patch.gz.b64
@@ -53,8 +54,8 @@ jobs:
 
             git apply --check /tmp/output-pos.patch
             git apply /tmp/output-pos.patch
-            git apply --check .agent-tools/output-pos-fix.patch
-            git apply .agent-tools/output-pos-fix.patch
+            git apply --check /tmp/output-pos-fix.patch
+            git apply /tmp/output-pos-fix.patch
 
             git add backend/inventory
             git commit -m "feat: support product packaging and checkout payments"
