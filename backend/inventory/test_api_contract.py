@@ -14,7 +14,7 @@ class ApiRouteContractTests(SimpleTestCase):
         "/api/outputs/": "stockoutput-list",
         "/api/movements/": "movement-list",
         "/api/adjustments/": "stockadjustment-list",
-        "/api/inventories/": "inventory-list",
+        "/api/inventories/": "inventorycount-list",
         "/api/alerts/": "alert-list",
         "/api/notifications/": "notifications-list",
         "/api/audit-logs/": "auditlog-list",
