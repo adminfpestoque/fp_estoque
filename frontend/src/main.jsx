@@ -18,10 +18,12 @@ import { UsersPage } from "./pages/users.jsx";
 import { SettingsPage } from "./pages/settings.jsx";
 import { installReferenceFallbacks } from "./api-fallback.js";
 import { installCreditSaleEnhancements } from "./output-credit.js";
+import { installEntryProductColumn } from "./entry-products.js";
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
 installReferenceFallbacks(api);
 installCreditSaleEnhancements(api);
+installEntryProductColumn(api);
 applyPreferences(loadStoredPreferences());
 
 function App() {
