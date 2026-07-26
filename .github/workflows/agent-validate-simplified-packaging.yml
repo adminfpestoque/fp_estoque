@@ -26,6 +26,7 @@ jobs:
           set -euo pipefail
           cp .agent-tools/simplify_packaging.py /tmp/simplify_packaging.py
           cp .agent-tools/update_simplified_packaging_tests.py /tmp/update_simplified_packaging_tests.py
+          cp .agent-tools/fix_created_packaging_selection.py /tmp/fix_created_packaging_selection.py
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
           git fetch origin main
@@ -33,8 +34,10 @@ jobs:
           mkdir -p .agent-tools
           cp /tmp/simplify_packaging.py .agent-tools/simplify_packaging.py
           cp /tmp/update_simplified_packaging_tests.py .agent-tools/update_simplified_packaging_tests.py
+          cp /tmp/fix_created_packaging_selection.py .agent-tools/fix_created_packaging_selection.py
           python .agent-tools/simplify_packaging.py
           python .agent-tools/update_simplified_packaging_tests.py
+          python .agent-tools/fix_created_packaging_selection.py
           rm -rf .agent-tools
           git add backend/inventory
           git commit -m "refactor: keep packaging types only on products"
