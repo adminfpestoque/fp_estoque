@@ -9,15 +9,34 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")
 
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "").strip().lower()
+IS_RENDER = env_bool("RENDER") or bool(
+    os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_HOSTNAME")
+)
+IS_PRODUCTION = IS_RENDER or ENVIRONMENT in {"production", "prod"}
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me-use-at-least-32-characters")
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"
-ALLOW_LAN_DEV = os.getenv("ALLOW_LAN_DEV", "true").lower() == "true"
+# Nunca exponha páginas técnicas do Django no Render, mesmo que DEBUG tenha sido
+# deixado como true por engano no painel do serviço.
+DEBUG = env_bool("DEBUG", default=not IS_PRODUCTION) and not IS_PRODUCTION
+ALLOW_LAN_DEV = env_bool("ALLOW_LAN_DEV", default=not IS_PRODUCTION)
 
 ALLOWED_HOSTS = [
     value.strip()
     for value in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if value.strip()
 ]
+render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if render_hostname and render_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_hostname)
 if DEBUG and ALLOW_LAN_DEV and "*" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("*")
 
@@ -69,7 +88,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 RUNNING_TESTS = "test" in sys.argv
 
-if RUNNING_TESTS or os.getenv("USE_SQLITE_FOR_TESTS", "false").lower() == "true":
+if RUNNING_TESTS or env_bool("USE_SQLITE_FOR_TESTS"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -82,10 +101,10 @@ else:
     if not DATABASE_URL:
         raise RuntimeError(
             "DATABASE_URL não foi definida. Configure a conexão PostgreSQL do Supabase no arquivo .env"
-        )    
+        )
     if not DATABASE_URL.startswith(("postgres://", "postgresql://")):
         raise RuntimeError("DATABASE_URL deve apontar para um banco PostgreSQL.")
-    
+
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
@@ -94,7 +113,10 @@ else:
         )
     }
     DATABASES["default"].setdefault("OPTIONS", {})
-    DATABASES["default"]["OPTIONS"] = {"sslmode": "require"}
+    DATABASES["default"]["OPTIONS"] = {
+        **DATABASES["default"].get("OPTIONS", {}),
+        "sslmode": "require",
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -121,16 +143,19 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if value.strip()
 ]
-CORS_ALLOWED_ORIGIN_REGEXES = []
+# Mantém o frontend hospedado na Vercel funcional durante produção e previews,
+# sem precisar ativar DEBUG no backend.
+CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
 if DEBUG and ALLOW_LAN_DEV:
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^https://.*\.vercel\.app$",
-        r"^http://localhost:\d+$",
-        r"^http://127\.0\.0\.1:\d+$",
-        r"^http://192\.168\.\d{1,3}\.\d{1,3}:\d+$",
-        r"^http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$",
-        r"^http://172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}:\d+$",
-    ]
+    CORS_ALLOWED_ORIGIN_REGEXES.extend(
+        [
+            r"^http://localhost:\d+$",
+            r"^http://127\.0\.0\.1:\d+$",
+            r"^http://192\.168\.\d{1,3}\.\d{1,3}:\d+$",
+            r"^http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$",
+            r"^http://172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}:\d+$",
+        ]
+    )
 CORS_ALLOW_CREDENTIALS = False
 
 REST_FRAMEWORK = {
@@ -158,9 +183,15 @@ SIMPLE_JWT = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "FP Estoque API",
     "DESCRIPTION": "API REST do sistema interno de estoque do FP Depósito de Bebidas.",
-    "VERSION": "2.0.0",
+    "VERSION": "2.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SESSION_COOKIE_SECURE = IS_PRODUCTION
+CSRF_COOKIE_SECURE = IS_PRODUCTION
 
 LOGGING = {
     "version": 1,
