@@ -28,13 +28,24 @@ jobs:
           DJANGO_SECRET_KEY: "ci-only-secret-key-with-more-than-thirty-two-characters"
           DEBUG: "false"
           ALLOW_LAN_DEV: "false"
+        shell: bash
         run: |
-          python manage.py check
-          python manage.py makemigrations --check --dry-run
-          rm -f db.sqlite3
-          python manage.py migrate --noinput
-          python manage.py test -v 2
-          python -m compileall -q .
+          set -o pipefail
+          {
+            python manage.py check
+            python manage.py makemigrations --check --dry-run
+            rm -f db.sqlite3
+            python manage.py migrate --noinput
+            python manage.py test -v 2
+            python -m compileall -q .
+          } 2>&1 | tee /tmp/backend-ci.log
+      - name: Upload backend diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-ci-log
+          path: /tmp/backend-ci.log
+          retention-days: 3
 
   frontend:
     runs-on: ubuntu-latest
