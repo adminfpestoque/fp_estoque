@@ -25,6 +25,16 @@ import {
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
 
+const PACKAGING_TYPES = [
+  ["BOX", "Caixa"],
+  ["BUNDLE", "Fardo"],
+  ["CRATE", "Grade/engradado"],
+  ["PACK", "Pacote"],
+  ["TRAY", "Bandeja"],
+  ["BAG", "Saco"],
+  ["OTHER", "Outra"],
+];
+
 const productInitial = {
   name: "",
   description: "",
@@ -39,6 +49,7 @@ const productInitial = {
   minimum_stock: "0",
   maximum_stock: "0",
   active: true,
+  packaging_options: [],
 };
 
 function productSubtitle(row) {
@@ -94,6 +105,13 @@ export function ProductsPage({ notify, me }) {
       minimum_stock: String(row.minimum_stock ?? 0),
       maximum_stock: String(row.maximum_stock ?? 0),
       active: Boolean(row.active),
+      packaging_options: (row.packaging_options || []).map((option) => ({
+        id: option.id,
+        type: option.type || "BOX",
+        name: option.name || option.type_display || "Caixa",
+        units_per_package: String(option.units_per_package || 2),
+        active: option.active !== false,
+      })),
     });
   }
 
@@ -116,6 +134,13 @@ export function ProductsPage({ notify, me }) {
         minimum_stock: String(form.minimum_stock),
         maximum_stock: String(form.maximum_stock),
         active: Boolean(form.active),
+        packaging_options: (form.packaging_options || []).map((option) => ({
+          ...(option.id ? { id: Number(option.id) } : {}),
+          type: option.type || "OTHER",
+          name: option.name?.trim() || "",
+          units_per_package: String(option.units_per_package),
+          active: option.active !== false,
+        })),
       };
 
       if (form.id) await api.patch(`products/${form.id}/`, payload);
@@ -127,6 +152,32 @@ export function ProductsPage({ notify, me }) {
     } catch (error) {
       notify(getError(error), "error");
     }
+  }
+
+  function addPackagingOption() {
+    setForm((current) => ({
+      ...current,
+      packaging_options: [
+        ...(current.packaging_options || []),
+        { type: "BOX", name: "Caixa", units_per_package: "12", active: true },
+      ],
+    }));
+  }
+
+  function updatePackagingOption(index, key, value) {
+    setForm((current) => ({
+      ...current,
+      packaging_options: current.packaging_options.map((option, optionIndex) =>
+        optionIndex === index ? { ...option, [key]: value } : option,
+      ),
+    }));
+  }
+
+  function removePackagingOption(index) {
+    setForm((current) => ({
+      ...current,
+      packaging_options: current.packaging_options.filter((_, optionIndex) => optionIndex !== index),
+    }));
   }
 
   async function executePendingAction() {
@@ -463,6 +514,45 @@ export function ProductsPage({ notify, me }) {
             <Field label="Estoque máximo">
               <input type="number" min="0" step="1" value={form.maximum_stock} onChange={(event) => setForm({ ...form, maximum_stock: event.target.value })} />
             </Field>
+
+            <div className="packaging-config full">
+              <div className="packaging-config-heading">
+                <div>
+                  <h3>Formas de saída do produto</h3>
+                  <p>A opção Unidade já existe automaticamente. Cadastre somente caixa, fardo, grade ou pacote e informe quantas unidades existem em cada um.</p>
+                </div>
+                <Button type="button" variant="secondary" icon={Plus} onClick={addPackagingOption}>Adicionar forma</Button>
+              </div>
+              <div className="packaging-default-row">
+                <strong>Unidade</strong><span>1 UN</span><small>Forma padrão obrigatória</small>
+              </div>
+              {(form.packaging_options || []).map((option, index) => (
+                <div className="packaging-option-row" key={option.id || index}>
+                  <Field label="Tipo">
+                    <select
+                      value={option.type}
+                      onChange={(event) => {
+                        const label = PACKAGING_TYPES.find(([value]) => value === event.target.value)?.[1] || "Outra";
+                        updatePackagingOption(index, "type", event.target.value);
+                        if (!option.name || PACKAGING_TYPES.some(([, currentLabel]) => currentLabel === option.name)) {
+                          updatePackagingOption(index, "name", label);
+                        }
+                      }}
+                    >
+                      {PACKAGING_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Nome exibido" required hint="Ex.: Caixa, Grade, Fardo com 6.">
+                    <input value={option.name} onChange={(event) => updatePackagingOption(index, "name", event.target.value)} required />
+                  </Field>
+                  <Field label="Unidades contidas" required>
+                    <input type="number" min="2" step="1" value={option.units_per_package} onChange={(event) => updatePackagingOption(index, "units_per_package", event.target.value)} required />
+                  </Field>
+                  <button type="button" className="icon-btn danger" onClick={() => removePackagingOption(index)} aria-label={`Remover ${option.name || "forma de saída"}`}><Trash2 size={16} /></button>
+                </div>
+              ))}
+              {!form.packaging_options?.length && <div className="packaging-empty">Este produto será retirado somente por unidade até que outra forma seja cadastrada.</div>}
+            </div>
 
             <Field label="Descrição">
               <textarea value={form.description || ""} onChange={(event) => setForm({ ...form, description: event.target.value })} />

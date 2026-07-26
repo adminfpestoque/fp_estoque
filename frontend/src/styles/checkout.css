@@ -1,0 +1,182 @@
+/* Cadastro de embalagens e caixa de saídas */
+.packaging-config {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-subtle);
+  display: grid;
+  gap: 12px;
+}
+.packaging-config-heading,
+.checkout-products-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.packaging-config-heading h3,
+.checkout-products-heading h3 { margin: 0; font-size: 16px; }
+.packaging-config-heading p,
+.checkout-products-heading p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
+.packaging-default-row,
+.packaging-option-row {
+  display: grid;
+  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1.4fr) minmax(150px, .8fr) 42px;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.packaging-default-row { grid-template-columns: 1fr auto 1.4fr; align-items: center; }
+.packaging-default-row span { font-weight: 900; color: var(--gold-dark); }
+.packaging-default-row small,
+.packaging-empty { color: var(--muted); }
+.packaging-empty { padding: 14px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; }
+
+.checkout-form { display: grid; gap: 16px; }
+.checkout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(285px, 340px);
+  gap: 18px;
+  align-items: start;
+}
+.checkout-main { display: grid; gap: 18px; min-width: 0; }
+.checkout-items { display: grid; gap: 12px; }
+.checkout-item-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(150px, 190px) 38px;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.checkout-item-card.invalid { border-color: var(--tone-danger-border); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tone-danger-border) 25%, transparent); }
+.checkout-item-number {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--gold);
+  color: #111;
+  font-weight: 900;
+}
+.checkout-item-fields {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.6fr) minmax(160px, 1fr) minmax(120px, .65fr) minmax(170px, 1fr);
+  gap: 10px;
+}
+.checkout-item-summary {
+  min-height: 100%;
+  padding: 11px;
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  text-align: right;
+}
+.checkout-item-summary span,
+.checkout-item-summary small { color: var(--muted); font-size: 12px; }
+.checkout-item-summary strong { font-size: 18px; }
+.checkout-error { color: var(--tone-danger-text) !important; font-weight: 800; }
+.checkout-remove { margin-top: 25px; }
+
+.checkout-summary {
+  position: sticky;
+  top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-subtle);
+  display: grid;
+  gap: 15px;
+}
+.checkout-summary-title { display: flex; align-items: center; gap: 10px; }
+.checkout-summary-title svg { color: var(--gold-dark); }
+.checkout-summary-title div { display: grid; gap: 2px; }
+.checkout-summary-title small { color: var(--muted); }
+.checkout-total-row {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--surface-strong);
+  color: var(--surface-strong-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.checkout-total-row strong { font-size: 25px; }
+.checkout-change {
+  padding: 14px;
+  border: 1px solid var(--tone-success-border);
+  border-radius: 12px;
+  background: var(--tone-success-bg);
+  color: var(--tone-success-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.checkout-change strong { font-size: 22px; }
+.checkout-change.missing { border-color: var(--tone-danger-border); background: var(--tone-danger-bg); color: var(--tone-danger-text); }
+.checkout-no-payment,
+.checkout-stock-note,
+.checkout-warning {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  line-height: 1.45;
+}
+.checkout-stock-note { display: grid; gap: 2px; }
+.checkout-stock-note strong { font-size: 20px; }
+.checkout-stock-note span { color: var(--muted); font-size: 12px; }
+.checkout-warning { background: var(--tone-danger-bg); color: var(--tone-danger-text); border-color: var(--tone-danger-border); font-weight: 750; }
+.checkout-actions { position: sticky; bottom: -1px; z-index: 2; padding: 14px 0 0; background: var(--sticky-surface); border-top: 1px solid var(--border); }
+
+.checkout-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.checkout-detail-grid > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  display: grid;
+  gap: 3px;
+}
+.checkout-detail-grid span { color: var(--muted); font-size: 12px; }
+.checkout-detail-items h3 { margin: 0 0 10px; }
+
+@media (max-width: 1250px) {
+  .checkout-layout { grid-template-columns: 1fr; }
+  .checkout-summary { position: static; }
+  .checkout-item-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+  .checkout-item-card { grid-template-columns: 32px 1fr 38px; }
+  .checkout-item-summary { grid-column: 2 / 3; text-align: left; }
+  .checkout-remove { grid-column: 3; grid-row: 1; margin-top: 0; }
+  .checkout-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .packaging-option-row { grid-template-columns: 1fr; }
+  .packaging-option-row .icon-btn { justify-self: end; }
+}
+@media (max-width: 560px) {
+  .checkout-item-fields,
+  .checkout-detail-grid { grid-template-columns: 1fr; }
+  .checkout-products-heading,
+  .packaging-config-heading { flex-direction: column; }
+  .checkout-products-heading .btn,
+  .packaging-config-heading .btn { width: 100%; }
+  .packaging-default-row { grid-template-columns: 1fr auto; }
+  .packaging-default-row small { grid-column: 1 / -1; }
+}
