@@ -40,7 +40,11 @@ function cleanProductForm() {
     const label = normalize(title?.textContent);
 
     if (label === "estoque maximo") {
-      field.remove();
+      field.hidden = true;
+      field.setAttribute("aria-hidden", "true");
+      field.querySelectorAll("input, select, textarea, button").forEach((control) => {
+        control.disabled = true;
+      });
       continue;
     }
 
