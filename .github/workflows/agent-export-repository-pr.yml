@@ -1,0 +1,20 @@
+name: Agent export repository PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository
+        run: |
+          tar --exclude=.git --exclude=.github/workflows/agent-export-repository.yml --exclude=.github/workflows/agent-export-repository-pr.yml -czf /tmp/fp_estoque.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fp-estoque-source
+          path: /tmp/fp_estoque.tar.gz
+          retention-days: 1
