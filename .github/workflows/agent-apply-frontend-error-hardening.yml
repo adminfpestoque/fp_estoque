@@ -1,0 +1,129 @@
+name: Apply frontend API error hardening
+
+on:
+  push:
+    branches:
+      - agent/fix-packaging-route-and-api-errors
+    paths:
+      - .agent-tools/apply-frontend-error-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-packaging-route-and-api-errors
+          fetch-depth: 0
+      - name: Sanitize API error messages
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/shared.jsx")
+          source = path.read_text()
+
+          old_flatten = '''function flattenError(value, prefix = "") {
+            if (value == null) return [];
+            if (typeof value === "string" || typeof value === "number") {
+              return [`${prefix ? `${prefix}: ` : ""}${value}`];
+            }
+          '''
+          new_flatten = '''const MAX_ERROR_MESSAGE_LENGTH = 600;
+
+          function looksLikeHtml(value) {
+            const text = String(value || "").trim().toLowerCase();
+            return text.startsWith("<!doctype html")
+              || text.startsWith("<html")
+              || text.includes("<body")
+              || text.includes("<main")
+              || text.includes("django.urls.exceptions");
+          }
+
+          function safeErrorText(value) {
+            const text = String(value ?? "").replace(/\\s+/g, " ").trim();
+            if (!text || looksLikeHtml(text)) return "";
+            return text.length > MAX_ERROR_MESSAGE_LENGTH
+              ? `${text.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
+              : text;
+          }
+
+          function httpErrorMessage(error) {
+            const status = error?.response?.status;
+            if (!error?.response) {
+              return "Não foi possível conectar ao servidor. Verifique a internet e tente novamente.";
+            }
+            if (status === 404) {
+              return "O recurso solicitado ainda não está disponível no servidor. A atualização do backend pode estar em implantação; tente novamente em alguns instantes.";
+            }
+            if (status === 403) return "Você não tem permissão para realizar esta operação.";
+            if (status === 500) return "O servidor encontrou um erro inesperado. Tente novamente em alguns instantes.";
+            if ([502, 503, 504].includes(status)) {
+              return "O servidor está temporariamente indisponível. Aguarde alguns instantes e tente novamente.";
+            }
+            return "Não foi possível concluir a operação.";
+          }
+
+          function flattenError(value, prefix = "") {
+            if (value == null) return [];
+            if (typeof value === "string" || typeof value === "number") {
+              const message = safeErrorText(value);
+              return message ? [`${prefix ? `${prefix}: ` : ""}${message}`] : [];
+            }
+          '''
+          if old_flatten not in source:
+              raise SystemExit("Bloco flattenError esperado não foi encontrado.")
+          source = source.replace(old_flatten, new_flatten, 1)
+
+          old_get_error = '''export function getError(error) {
+            const data = error?.response?.data;
+            if (!data) return "Não foi possível concluir a operação.";
+            if (typeof data === "string") return data;
+
+            if (data.detail != null) {
+              const detail = flattenError(data.detail)
+                .map((message) => message.replace(/^Detalhe:\\s*/i, ""))
+                .join(" • ");
+              const blockers = formatBlockers(data.blockers || data.vinculos);
+              return [detail, blockers].filter(Boolean).join(" ") || "Não foi possível concluir a operação.";
+            }
+
+            const messages = flattenError(data);
+            return messages.length ? messages.join(" • ") : "Não foi possível concluir a operação.";
+          }
+          '''
+          new_get_error = '''export function getError(error) {
+            const fallback = httpErrorMessage(error);
+            const data = error?.response?.data;
+            if (!data) return fallback;
+            if (typeof data === "string") return safeErrorText(data) || fallback;
+
+            if (data.detail != null) {
+              const detail = flattenError(data.detail)
+                .map((message) => message.replace(/^Detalhe:\\s*/i, ""))
+                .join(" • ");
+              const blockers = formatBlockers(data.blockers || data.vinculos);
+              return [detail, blockers].filter(Boolean).join(" ") || fallback;
+            }
+
+            const messages = flattenError(data);
+            return messages.length ? messages.join(" • ") : fallback;
+          }
+          '''
+          if old_get_error not in source:
+              raise SystemExit("Bloco getError esperado não foi encontrado.")
+          source = source.replace(old_get_error, new_get_error, 1)
+          path.write_text(source)
+          PY
+
+          rm -f .agent-tools/apply-frontend-error-hardening
+          rm -f .github/workflows/agent-apply-frontend-error-hardening.yml
+          git config user.name "adminfpestoque"
+          git config user.email "adminfpestoque@users.noreply.github.com"
+          git add frontend/src/shared.jsx .agent-tools .github/workflows
+          git commit -m "fix: hide HTML error pages from frontend users"
+          git push origin agent/fix-packaging-route-and-api-errors
