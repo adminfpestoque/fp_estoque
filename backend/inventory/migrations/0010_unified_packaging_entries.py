@@ -25,6 +25,7 @@ def migrate_packaging_and_documents(apps, schema_editor):
 
     first_by_product = set()
     primary_by_product_type = {}
+    category_packaging_links = set()
     for option in ProductPackaging.objects.select_related("product", "product__category").order_by(
         "product_id", "pk"
     ):
@@ -60,7 +61,14 @@ def migrate_packaging_and_documents(apps, schema_editor):
                 "updated_at",
             ]
         )
-        option.product.category.packaging_types.add(packaging_type)
+
+        # A tabela intermediária do ManyToMany só recebe o índice único ao fim
+        # desta migração. Sem este controle, duas opções da mesma categoria e
+        # do mesmo tipo podem inserir pares duplicados antes de o índice existir.
+        category_packaging_key = (option.product.category_id, packaging_type.pk)
+        if category_packaging_key not in category_packaging_links:
+            option.product.category.packaging_types.add(packaging_type)
+            category_packaging_links.add(category_packaging_key)
 
     for item in StockEntryItem.objects.all().iterator():
         quantity = Decimal(item.quantity or 0)
