@@ -1,0 +1,38 @@
+/* Coluna de produtos na listagem de entradas */
+.entry-products-header {
+  min-width: 190px;
+}
+
+.entry-products-cell {
+  min-width: 190px;
+  max-width: 280px;
+}
+
+.entry-products-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.entry-products-summary strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-products-summary small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+@media (max-width: 1050px) {
+  .entry-products-header,
+  .entry-products-cell {
+    min-width: 160px;
+  }
+}
