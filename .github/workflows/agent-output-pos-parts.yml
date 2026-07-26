@@ -1,0 +1,17 @@
+name: Agent export output checkout parts
+
+on:
+  push:
+    branches:
+      - agent/output-pos-checkout
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: output-pos-parts
+          path: .agent-tools/output-pos.patch.gz.b64.part*
+          retention-days: 1
