@@ -122,7 +122,6 @@ jobs:
           npm audit --omit=dev
 
       - name: Publish validated commits
-        if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
