@@ -47,12 +47,14 @@ function documentStatus(row) {
   return [row.status, "Cancelada"];
 }
 
-function saleUnitOptions(product) {
+function movementUnitOptions(product) {
   const unitOption = {
     id: "",
     name: "Unidade",
     factor: 1,
-    description: "Cada quantidade representa 1 unidade do estoque",
+    costPrice: parseLocalizedNumber(product?.cost_price),
+    salePrice: parseLocalizedNumber(product?.sale_price),
+    isDefault: !(product?.packaging_options || []).some((option) => option.active && option.is_default),
   };
   if (!product) return [unitOption];
   return [
@@ -61,12 +63,30 @@ function saleUnitOptions(product) {
       .filter((option) => option.active && Number(option.units_per_package) > 1)
       .map((option) => ({
         id: String(option.id),
-        name: option.name || option.type_display || "Embalagem",
+        name: option.packaging_type_name || option.display_name || option.name || "Embalagem",
         factor: Number(option.units_per_package),
-        description: `Cada ${option.name || option.type_display || "embalagem"} contém ${Number(option.units_per_package)} unidades`,
+        costPrice: parseLocalizedNumber(option.cost_price),
+        salePrice: parseLocalizedNumber(option.sale_price),
+        isDefault: Boolean(option.is_default),
       })),
   ];
 }
+
+function defaultMovementOption(product) {
+  const options = movementUnitOptions(product);
+  return options.find((option) => option.isDefault) || options[0];
+}
+
+function quantityFieldLabel(option) {
+  if (!option || option.factor === 1) return "Quantidade de unidades";
+  return `Quantidade de embalagens do tipo ${option.name}`;
+}
+
+function costFieldLabel(option) {
+  if (!option || option.factor === 1) return "Preço de custo por unidade";
+  return `Preço de custo por ${option.name}`;
+}
+
 
 function OutputDetails({ row, onClose }) {
   return (
@@ -98,7 +118,7 @@ function OutputDetails({ row, onClose }) {
                   <td>{item.sale_unit_description || item.sale_unit_name || "Unidade"}</td>
                   <td>{fmtQty(item.sale_quantity || item.quantity)}</td>
                   <td>{fmtQty(item.quantity)} UN</td>
-                  <td>{fmtMoney(item.unit_sale_price)}</td>
+                  <td>{fmtMoney(item.sale_price ?? item.unit_sale_price)} por {item.sale_unit_name || "Unidade"}</td>
                   <td>{fmtMoney(item.subtotal)}</td>
                 </tr>
               ))}
@@ -139,12 +159,12 @@ export function DocumentPage({ type, notify, me }) {
 
   const entryItem = {
     product: "",
-    quantity: "1",
-    unit_cost: "0,00",
+    packaging: "",
+    entry_quantity: "1",
+    purchase_price: "0,00",
     lot_number: "",
     manufacturing_date: "",
     expiration_date: "",
-    notes: "",
   };
   const outputItem = {
     product: "",
@@ -194,8 +214,9 @@ export function DocumentPage({ type, notify, me }) {
         product: item.product || "",
         ...(isEntry
           ? {
-              quantity: String(item.quantity),
-              unit_cost: formatMoneyInput(item.unit_cost),
+              packaging: item.packaging || "",
+              entry_quantity: String(item.entry_quantity || item.quantity || 1),
+              purchase_price: formatMoneyInput(item.purchase_price ?? item.unit_cost ?? 0),
             }
           : {
               packaging: item.packaging || "",
@@ -214,12 +235,54 @@ export function DocumentPage({ type, notify, me }) {
     }));
   }
 
-  function changeOutputProduct(index, productId) {
+  function changeEntryProduct(index, productId) {
+    const product = products.find((row) => String(row.id) === String(productId));
+    const selected = defaultMovementOption(product);
     setForm((current) => ({
       ...current,
       items: current.items.map((item, itemIndex) =>
         itemIndex === index
-          ? { ...item, product: productId, packaging: "", sale_quantity: "1", lot: "" }
+          ? {
+              ...item,
+              product: productId,
+              packaging: selected.id,
+              entry_quantity: "1",
+              purchase_price: formatMoneyInput(selected.costPrice),
+              lot_number: "",
+            }
+          : item,
+      ),
+    }));
+  }
+
+  function changeEntryUnit(index, packagingId) {
+    const item = form.items[index];
+    const product = products.find((row) => String(row.id) === String(item.product));
+    const selected = movementUnitOptions(product).find(
+      (option) => String(option.id) === String(packagingId),
+    ) || movementUnitOptions(product)[0];
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((row, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...row,
+              packaging: selected.id,
+              purchase_price: formatMoneyInput(selected.costPrice),
+            }
+          : row,
+      ),
+    }));
+  }
+
+  function changeOutputProduct(index, productId) {
+    const product = products.find((row) => String(row.id) === String(productId));
+    const selected = defaultMovementOption(product);
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...item, product: productId, packaging: selected.id, sale_quantity: "1", lot: "" }
           : item,
       ),
     }));
@@ -236,6 +299,31 @@ export function DocumentPage({ type, notify, me }) {
     }));
   }
 
+  const entryCalculation = useMemo(() => {
+    if (!form || !isEntry) return { lines: [], total: 0, units: 0, invalidSelection: false };
+    let invalidSelection = false;
+    const lines = form.items.map((item) => {
+      const product = products.find((row) => String(row.id) === String(item.product));
+      const options = movementUnitOptions(product);
+      const selected = options.find((option) => String(option.id) === String(item.packaging));
+      if (item.packaging && !selected) invalidSelection = true;
+      const effectiveOption = selected || options[0];
+      const entryQuantity = Math.max(0, Math.trunc(parseLocalizedNumber(item.entry_quantity)));
+      const stockQuantity = entryQuantity * effectiveOption.factor;
+      const purchasePrice = parseLocalizedNumber(item.purchase_price);
+      const subtotal = entryQuantity * purchasePrice;
+      const unitCost = effectiveOption.factor ? purchasePrice / effectiveOption.factor : purchasePrice;
+      return { product, selected: effectiveOption, entryQuantity, stockQuantity, purchasePrice, unitCost, subtotal };
+    });
+    return {
+      lines,
+      total: lines.reduce((sum, line) => sum + line.subtotal, 0),
+      units: lines.reduce((sum, line) => sum + line.stockQuantity, 0),
+      invalidSelection,
+    };
+  }, [form, isEntry, products]);
+
+
   const outputCalculation = useMemo(() => {
     if (!form || isEntry) {
       return {
@@ -247,14 +335,15 @@ export function DocumentPage({ type, notify, me }) {
     let invalidSelection = false;
     const lines = form.items.map((item) => {
       const product = products.find((row) => String(row.id) === String(item.product));
-      const options = saleUnitOptions(product);
+      const options = movementUnitOptions(product);
       const selected = options.find((row) => String(row.id) === String(item.packaging));
       if (item.packaging && !selected) invalidSelection = true;
       const effectiveOption = selected || options[0];
       const saleQuantity = Math.max(0, Math.trunc(parseLocalizedNumber(item.sale_quantity)));
       const stockQuantity = saleQuantity * effectiveOption.factor;
-      const unitPrice = parseLocalizedNumber(product?.sale_price);
-      const subtotal = stockQuantity * unitPrice;
+      const formPrice = effectiveOption.salePrice;
+      const unitPrice = effectiveOption.factor ? formPrice / effectiveOption.factor : formPrice;
+      const subtotal = saleQuantity * formPrice;
       const currentStock = parseLocalizedNumber(product?.stock);
       const alreadySelected = product ? (productTotals.get(product.id) || 0) : 0;
       const cumulativeQuantity = alreadySelected + stockQuantity;
@@ -264,6 +353,7 @@ export function DocumentPage({ type, notify, me }) {
         selected: effectiveOption,
         saleQuantity,
         stockQuantity,
+        formPrice,
         unitPrice,
         subtotal,
         currentStock,
@@ -287,16 +377,17 @@ export function DocumentPage({ type, notify, me }) {
       return {
         supplier: Number(form.supplier),
         entry_date: new Date(form[dateField]).toISOString(),
-        invoice_number: form.invoice_number || "",
-        notes: form.notes || "",
+        invoice_number: "",
+        notes: "",
         items: form.items.map((item) => ({
           product: Number(item.product),
-          quantity: String(item.quantity),
-          unit_cost: String(item.unit_cost),
+          packaging: item.packaging ? Number(item.packaging) : null,
+          entry_quantity: String(item.entry_quantity),
+          purchase_price: String(item.purchase_price),
           lot_number: item.lot_number || "",
           manufacturing_date: item.manufacturing_date || null,
           expiration_date: item.expiration_date || null,
-          notes: item.notes || "",
+          notes: "",
         })),
       };
     }
@@ -323,6 +414,10 @@ export function DocumentPage({ type, notify, me }) {
 
   async function save(event, finalize = false) {
     event?.preventDefault?.();
+    if (isEntry && entryCalculation.invalidSelection) {
+      notify("Selecione novamente a forma de entrada de um dos produtos.", "error");
+      return;
+    }
     if (!isEntry) {
       if (outputCalculation.invalidSelection) {
         notify("Selecione novamente a forma de retirada de um dos produtos.", "error");
@@ -439,7 +534,7 @@ export function DocumentPage({ type, notify, me }) {
         title={isEntry ? "Entradas de estoque" : "Saídas e caixa"}
         description={
           isEntry
-            ? "Recebimentos com lotes, validade, custos e nota fiscal."
+            ? "Registre compras por unidade, caixa, fardo, pacote ou outra embalagem e converta automaticamente para unidades de estoque."
             : "Escolha o produto, a forma de retirada e a quantidade. O sistema converte tudo para unidades e calcula o pagamento."
         }
         actions={<Button icon={Plus} onClick={start}>{isEntry ? "Nova entrada" : "Nova saída"}</Button>}
@@ -477,8 +572,7 @@ export function DocumentPage({ type, notify, me }) {
             ...(isEntry
               ? [
                   { key: "supplier_name", label: "Fornecedor" },
-                  { key: "invoice_number", label: "Nota fiscal" },
-                  { key: "total_value", label: "Valor total", render: (row) => fmtMoney(row.total_value) },
+                  { key: "total_value", label: "Valor total da compra", render: (row) => fmtMoney(row.total_value) },
                 ]
               : [
                   { key: "customer_name", label: "Cliente", render: (row) => row.customer_name || "Balcão" },
@@ -517,29 +611,48 @@ export function DocumentPage({ type, notify, me }) {
 
       {form && isEntry && (
         <Modal title={`${form.id ? "Editar" : "Nova"} entrada`} onClose={() => !busy && setForm(null)} size="xl">
-          <form onSubmit={save} className="document-form">
-            {form.id && form.status === "CONFIRMED" && <div className="document-edit-warning">Ao salvar, o sistema estornará a movimentação anterior e aplicará novamente os valores corrigidos.</div>}
-            <div className="form-grid cols-3">
-              <Field label="Fornecedor" required><select value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} required><option value="">Selecione</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-              <Field label="Data da entrada" required><input type="datetime-local" value={form.entry_date} onChange={(event) => setForm({ ...form, entry_date: event.target.value })} required /></Field>
-              <Field label="Número da nota fiscal"><input value={form.invoice_number || ""} onChange={(event) => setForm({ ...form, invoice_number: event.target.value })} /></Field>
-              <Field label="Observações"><textarea value={form.notes || ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></Field>
+          <form onSubmit={save} className="document-form entry-form">
+            {form.id && form.status === "CONFIRMED" && <div className="document-edit-warning">Ao salvar, o sistema estornará a movimentação anterior e aplicará novamente as quantidades e os custos corrigidos.</div>}
+            <div className="form-grid cols-2">
+              <Field label="Fornecedor da compra" required><select value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} required><option value="">Selecione o fornecedor</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
+              <Field label="Data e hora da entrada" required><input type="datetime-local" value={form.entry_date} onChange={(event) => setForm({ ...form, entry_date: event.target.value })} required /></Field>
             </div>
-            <div className="items-editor">
-              <div className="items-header"><h3>Produtos</h3><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...entryItem }] })}>Adicionar item</Button></div>
-              {form.items.map((item, index) => (
-                <div className="item-row" key={item.id || index}>
-                  <Field label="Produto" required><select value={item.product || ""} onChange={(event) => updateItem(index, "product", event.target.value)} required><option value="">Selecione</option>{products.filter((product) => product.active || String(product.id) === String(item.product)).map((product) => <option key={product.id} value={product.id}>{product.name} — estoque {fmtQty(product.stock)}</option>)}</select></Field>
-                  <Field label="Quantidade" required><input type="number" min="1" step="1" value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} required /></Field>
-                  <Field label="Custo unitário" required hint="Aceita vírgula ou ponto."><input type="text" inputMode="decimal" value={item.unit_cost} onChange={(event) => updateItem(index, "unit_cost", event.target.value)} onBlur={() => updateItem(index, "unit_cost", formatMoneyInput(item.unit_cost))} required /></Field>
-                  <Field label="Lote"><input value={item.lot_number || ""} onChange={(event) => updateItem(index, "lot_number", event.target.value)} /></Field>
-                  <Field label="Fabricação"><input type="date" value={item.manufacturing_date || ""} onChange={(event) => updateItem(index, "manufacturing_date", event.target.value)} /></Field>
-                  <Field label="Validade"><input type="date" value={item.expiration_date || ""} onChange={(event) => updateItem(index, "expiration_date", event.target.value)} /></Field>
-                  <button type="button" className="icon-btn danger" disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 size={16} /></button>
-                </div>
-              ))}
+
+            <div className="checkout-products-heading"><div><h3>Produtos recebidos</h3><p>Escolha a forma recebida. O sistema transforma caixas, fardos e pacotes em unidades reais de estoque.</p></div><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...entryItem }] })}>Adicionar produto</Button></div>
+
+            <div className="checkout-items entry-items">
+              {form.items.map((item, index) => {
+                const line = entryCalculation.lines[index];
+                const product = line?.product;
+                const options = movementUnitOptions(product);
+                return (
+                  <div className="checkout-item-card entry-item-card" key={item.id || index}>
+                    <div className="checkout-item-number">{index + 1}</div>
+                    <div className="entry-item-fields">
+                      <Field label="Produto recebido" required><select value={item.product || ""} onChange={(event) => changeEntryProduct(index, event.target.value)} required><option value="">Selecione o produto</option>{products.filter((row) => row.active || String(row.id) === String(item.product)).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></Field>
+                      <Field label="Forma de entrada" required hint={!product ? "Selecione o produto primeiro." : "A forma padrão do produto já vem selecionada, mas pode ser alterada para Unidade ou outra embalagem."}><select value={item.packaging || ""} onChange={(event) => changeEntryUnit(index, event.target.value)} disabled={!product} required>{options.map((option) => <option key={option.id || "unit"} value={option.id}>{option.name} — contém {option.factor} {option.factor === 1 ? "unidade" : "unidades"}</option>)}</select></Field>
+                      <Field label={quantityFieldLabel(line?.selected)} required hint="Informe quantas unidades ou embalagens foram recebidas."><input type="number" min="1" step="1" value={item.entry_quantity} onChange={(event) => updateItem(index, "entry_quantity", event.target.value)} required /></Field>
+                      <Field label={costFieldLabel(line?.selected)} required hint="Valor pago por cada unidade, caixa, fardo, pacote ou outra forma selecionada."><input type="text" inputMode="decimal" value={item.purchase_price} onChange={(event) => updateItem(index, "purchase_price", event.target.value)} onBlur={() => updateItem(index, "purchase_price", formatMoneyInput(item.purchase_price))} required /></Field>
+                      <Field label="Número ou identificação do lote"><input value={item.lot_number || ""} onChange={(event) => updateItem(index, "lot_number", event.target.value)} placeholder="Opcional" /></Field>
+                      <Field label="Data de fabricação"><input type="date" value={item.manufacturing_date || ""} onChange={(event) => updateItem(index, "manufacturing_date", event.target.value)} /></Field>
+                      <Field label="Data de validade"><input type="date" value={item.expiration_date || ""} onChange={(event) => updateItem(index, "expiration_date", event.target.value)} /></Field>
+                    </div>
+                    <div className="checkout-item-summary entry-item-summary">
+                      <span>Conversão para o estoque</span>
+                      <strong>{fmtQty(line?.entryQuantity || 0)} {line?.selected?.name || "Unidade"}</strong>
+                      <div className="checkout-conversion-equation"><span>{fmtQty(line?.entryQuantity || 0)} × {fmtQty(line?.selected?.factor || 1)}</span><b>=</b><strong>{fmtQty(line?.stockQuantity || 0)} unidades</strong></div>
+                      <small>Custo equivalente por unidade: {fmtMoney(line?.unitCost || 0)}</small>
+                      <span>Valor total deste item</span>
+                      <strong>{fmtMoney(line?.subtotal || 0)}</strong>
+                    </div>
+                    <button type="button" className="icon-btn danger checkout-remove" disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })} aria-label="Remover produto"><Trash2 size={16} /></button>
+                  </div>
+                );
+              })}
             </div>
-            <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setForm(null)} disabled={busy}>Cancelar</Button><Button disabled={busy}>{busy ? "Salvando..." : form.id ? "Salvar alterações" : "Salvar rascunho"}</Button></div>
+
+            <div className="entry-total-summary"><span>Total de unidades adicionadas: <strong>{fmtQty(entryCalculation.units)} UN</strong></span><span>Valor total da compra: <strong>{fmtMoney(entryCalculation.total)}</strong></span></div>
+            <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setForm(null)} disabled={busy}>Cancelar</Button><Button disabled={busy || entryCalculation.invalidSelection}>{busy ? "Salvando..." : form.id ? "Salvar alterações" : "Salvar rascunho"}</Button></div>
           </form>
         </Modal>
       )}
@@ -562,7 +675,7 @@ export function DocumentPage({ type, notify, me }) {
                   {form.items.map((item, index) => {
                     const line = outputCalculation.lines[index];
                     const product = line?.product;
-                    const options = saleUnitOptions(product);
+                    const options = movementUnitOptions(product);
                     const lineInsufficient = product && line.stockQuantity > parseLocalizedNumber(product.stock);
                     return (
                       <div className={`checkout-item-card ${lineInsufficient ? "invalid" : ""}`} key={item.id || index}>
@@ -599,7 +712,8 @@ export function DocumentPage({ type, notify, me }) {
                             <strong>{fmtQty(line?.stockQuantity || 0)} unidades</strong>
                           </div>
                           <small>Estoque: {fmtQty(line?.currentStock || 0)} → {fmtQty(line?.remainingStock || 0)} unidades</small>
-                          <span>{fmtMoney(line?.unitPrice || 0)} por unidade</span>
+                          <span>{fmtMoney(line?.formPrice || 0)} por {line?.selected?.name || "Unidade"}</span>
+                          <small>Equivale a {fmtMoney(line?.unitPrice || 0)} por unidade</small>
                           <strong>{fmtMoney(line?.subtotal || 0)}</strong>
                           {lineInsufficient && <small className="checkout-error">Estoque insuficiente</small>}
                         </div>

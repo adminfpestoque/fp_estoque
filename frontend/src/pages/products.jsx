@@ -7,6 +7,7 @@ import {
   fmtMoney,
   fmtQty,
   formatMoneyInput,
+  parseLocalizedNumber,
   getError,
   Button,
   ConfirmModal,
@@ -21,19 +22,31 @@ import {
   Power,
   PowerOff,
   Trash2,
+  Check,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
 
-const PACKAGING_TYPES = [
-  ["BOX", "Caixa"],
-  ["BUNDLE", "Fardo"],
-  ["CRATE", "Grade/engradado"],
-  ["PACK", "Pacote"],
-  ["TRAY", "Bandeja"],
-  ["BAG", "Saco"],
-  ["OTHER", "Outra"],
-];
+const DEFAULT_UNITS_BY_TYPE = {
+  Caixa: 12,
+  Fardo: 6,
+  "Grade/engradado": 24,
+  Grade: 24,
+  Engradado: 24,
+  Pacote: 6,
+  Bandeja: 12,
+  Saco: 10,
+};
+
+function defaultUnitsForType(typeName) {
+  return DEFAULT_UNITS_BY_TYPE[typeName] || 2;
+}
+
+function optionTypeName(option, packagingTypes) {
+  return option.packaging_type_name
+    || packagingTypes.find((type) => String(type.id) === String(option.packaging_type))?.name
+    || "Embalagem";
+}
 
 const productInitial = {
   name: "",
@@ -41,7 +54,6 @@ const productInitial = {
   category: "",
   supplier: "",
   brand: "",
-  package_type: "",
   volume: "500",
   volume_unit: "ML",
   cost_price: "0,00",
@@ -69,6 +81,9 @@ export function ProductsPage({ notify, me }) {
   const [search, setSearch] = useState("");
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [packagingTypes, setPackagingTypes] = useState([]);
+  const [newPackagingType, setNewPackagingType] = useState("");
+  const [creatingPackagingType, setCreatingPackagingType] = useState(false);
   const [form, setForm] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -77,14 +92,17 @@ export function ProductsPage({ notify, me }) {
     Promise.all([
       api.get("categories/?page_size=200"),
       api.get("suppliers/?page_size=200"),
+      api.get("packaging-types/?page_size=500"),
     ])
-      .then(([categoriesResponse, suppliersResponse]) => {
+      .then(([categoriesResponse, suppliersResponse, packagingTypesResponse]) => {
         setCategories(unwrap(categoriesResponse.data));
         setSuppliers(unwrap(suppliersResponse.data));
+        setPackagingTypes(unwrap(packagingTypesResponse.data));
       })
       .catch(() => {
         setCategories([]);
         setSuppliers([]);
+        setPackagingTypes([]);
       });
   }, []);
 
@@ -97,7 +115,6 @@ export function ProductsPage({ notify, me }) {
       category: row.category || "",
       supplier: row.supplier || "",
       brand: row.brand || "",
-      package_type: row.package_type || "",
       volume: row.volume == null ? "" : String(row.volume),
       volume_unit: row.volume_unit || "ML",
       cost_price: formatMoneyInput(row.cost_price),
@@ -107,9 +124,12 @@ export function ProductsPage({ notify, me }) {
       active: Boolean(row.active),
       packaging_options: (row.packaging_options || []).map((option) => ({
         id: option.id,
-        type: option.type || "BOX",
-        name: option.name || option.type_display || "Caixa",
+        packaging_type: option.packaging_type || "",
+        packaging_type_name: option.packaging_type_name || option.name || "Embalagem",
         units_per_package: String(option.units_per_package || 2),
+        cost_price: formatMoneyInput(option.cost_price ?? 0),
+        sale_price: formatMoneyInput(option.sale_price ?? 0),
+        is_default: Boolean(option.is_default),
         active: option.active !== false,
       })),
     });
@@ -124,7 +144,6 @@ export function ProductsPage({ notify, me }) {
         category: Number(form.category),
         supplier: form.supplier ? Number(form.supplier) : null,
         brand: form.brand?.trim() || "",
-        package_type: form.package_type?.trim() || "",
         volume: String(form.volume),
         volume_unit: form.volume_unit,
         unit: "UN",
@@ -136,9 +155,11 @@ export function ProductsPage({ notify, me }) {
         active: Boolean(form.active),
         packaging_options: (form.packaging_options || []).map((option) => ({
           ...(option.id ? { id: Number(option.id) } : {}),
-          type: option.type || "OTHER",
-          name: option.name?.trim() || "",
+          packaging_type: Number(option.packaging_type),
           units_per_package: String(option.units_per_package),
+          cost_price: String(option.cost_price),
+          sale_price: String(option.sale_price),
+          is_default: Boolean(option.is_default),
           active: option.active !== false,
         })),
       };
@@ -154,23 +175,77 @@ export function ProductsPage({ notify, me }) {
     }
   }
 
-  function addPackagingOption() {
-    setForm((current) => ({
-      ...current,
-      packaging_options: [
-        ...(current.packaging_options || []),
-        { type: "BOX", name: "Caixa", units_per_package: "12", active: true },
-      ],
-    }));
+  function addPackagingOption(preferredType = null) {
+    setForm((current) => {
+      const used = new Set((current.packaging_options || []).map((option) => String(option.packaging_type)));
+      const selectedType = preferredType
+        || packagingTypes.find((type) => type.active && !used.has(String(type.id)))
+        || packagingTypes.find((type) => type.active);
+      if (!selectedType) {
+        notify("Cadastre primeiro um tipo de embalagem, como Caixa, Fardo ou Pacote.", "error");
+        return current;
+      }
+      const units = defaultUnitsForType(selectedType.name);
+      const unitCost = parseLocalizedNumber(current.cost_price);
+      const unitSale = parseLocalizedNumber(current.sale_price);
+      return {
+        ...current,
+        packaging_options: [
+          ...(current.packaging_options || []),
+          {
+            packaging_type: selectedType.id,
+            packaging_type_name: selectedType.name,
+            units_per_package: String(units),
+            cost_price: formatMoneyInput(unitCost * units),
+            sale_price: formatMoneyInput(unitSale),
+            is_default: !(current.packaging_options || []).some((option) => option.is_default && option.active !== false),
+            active: true,
+          },
+        ],
+      };
+    });
   }
 
   function updatePackagingOption(index, key, value) {
     setForm((current) => ({
       ...current,
-      packaging_options: current.packaging_options.map((option, optionIndex) =>
-        optionIndex === index ? { ...option, [key]: value } : option,
-      ),
+      packaging_options: current.packaging_options.map((option, optionIndex) => {
+        if (optionIndex !== index) {
+          return key === "is_default" && value ? { ...option, is_default: false } : option;
+        }
+        if (key === "packaging_type") {
+          const type = packagingTypes.find((row) => String(row.id) === String(value));
+          return {
+            ...option,
+            packaging_type: value,
+            packaging_type_name: type?.name || option.packaging_type_name,
+            units_per_package: option.units_per_package || String(defaultUnitsForType(type?.name)),
+          };
+        }
+        return { ...option, [key]: value };
+      }),
     }));
+  }
+
+  async function createPackagingType() {
+    const name = newPackagingType.trim();
+    if (!name) {
+      notify("Digite o nome do novo tipo de embalagem.", "error");
+      return;
+    }
+    setCreatingPackagingType(true);
+    try {
+      const response = await api.post("packaging-types/", { name, active: true });
+      const created = response.data;
+      setPackagingTypes((current) => [...current.filter((item) => item.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
+      setNewPackagingType("");
+      addPackagingOption(created);
+      notify(`Tipo de embalagem “${created.name}” criado e adicionado ao produto.`);
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setCreatingPackagingType(false);
+    }
   }
 
   function removePackagingOption(index) {
@@ -449,15 +524,7 @@ export function ProductsPage({ notify, me }) {
               <input value={form.brand || ""} onChange={(event) => setForm({ ...form, brand: event.target.value })} />
             </Field>
 
-            <Field label="Tipo de embalagem" hint="Ex.: garrafa de vidro, lata ou caixa.">
-              <input
-                value={form.package_type || ""}
-                onChange={(event) => setForm({ ...form, package_type: event.target.value })}
-                placeholder="Garrafa de vidro"
-              />
-            </Field>
-
-            <Field label="Volume" required hint="Digite apenas o número, como 1, 350 ou 500.">
+            <Field label="Volume de cada unidade do produto" required hint="Digite somente o número. Ex.: 1, 350, 500 ou 965.">
               <input
                 type="number"
                 min="1"
@@ -468,26 +535,22 @@ export function ProductsPage({ notify, me }) {
               />
             </Field>
 
-            <Field label="Unidade de medida" required>
+            <Field label="Unidade de medida do volume" required>
               <select value={form.volume_unit} onChange={(event) => setForm({ ...form, volume_unit: event.target.value })} required>
                 <option value="ML">Mililitros (ML)</option>
                 <option value="L">Litros (L)</option>
               </select>
             </Field>
 
-            <Field label="Apresentação final">
-              <input
-                value={`${form.package_type ? `${form.package_type.trim()} ` : ""}${form.volume || ""}${form.volume_unit || ""}`}
-                readOnly
-                aria-label="Apresentação final do produto"
-              />
+            <Field label="Identificação do volume por unidade">
+              <input value={`${form.volume || ""}${form.volume_unit || ""}`} readOnly aria-label="Volume completo de cada unidade" />
             </Field>
 
-            <Field label="Unidade de estoque">
-              <input value="UN" readOnly />
+            <Field label="Unidade usada no controle do estoque">
+              <input value="UN — Unidade individual" readOnly />
             </Field>
 
-            <Field label="Preço de custo" hint="Aceita vírgula ou ponto.">
+            <Field label="Preço de custo por unidade individual" hint="Valor pago por 1 unidade do produto. Aceita vírgula ou ponto.">
               <input
                 type="text"
                 inputMode="decimal"
@@ -497,7 +560,7 @@ export function ProductsPage({ notify, me }) {
               />
             </Field>
 
-            <Field label="Preço de venda" hint="Aceita vírgula ou ponto.">
+            <Field label="Preço de venda por unidade individual" hint="Valor cobrado por 1 unidade do produto. Aceita vírgula ou ponto.">
               <input
                 type="text"
                 inputMode="decimal"
@@ -518,40 +581,71 @@ export function ProductsPage({ notify, me }) {
             <div className="packaging-config full">
               <div className="packaging-config-heading">
                 <div>
-                  <h3>Formas de saída do produto</h3>
-                  <p>A opção Unidade já existe automaticamente. Cadastre somente caixa, fardo, grade ou pacote e informe quantas unidades existem em cada um.</p>
+                  <h3>Formas de entrada e saída do produto</h3>
+                  <p>Cadastre como este produto é comprado e vendido. O estoque sempre será convertido e controlado em unidades individuais.</p>
                 </div>
-                <Button type="button" variant="secondary" icon={Plus} onClick={addPackagingOption}>Adicionar forma</Button>
+                <Button type="button" variant="secondary" icon={Plus} onClick={() => addPackagingOption()}>Adicionar forma de embalagem</Button>
               </div>
+
               <div className="packaging-default-row">
-                <strong>Unidade</strong><span>1 UN</span><small>Forma padrão obrigatória</small>
+                <strong>Unidade individual</strong>
+                <span>1 unidade no estoque</span>
+                <small>Custo {fmtMoney(parseLocalizedNumber(form.cost_price))} • Venda {fmtMoney(parseLocalizedNumber(form.sale_price))}</small>
               </div>
-              {(form.packaging_options || []).map((option, index) => (
-                <div className="packaging-option-row" key={option.id || index}>
-                  <Field label="Tipo">
-                    <select
-                      value={option.type}
-                      onChange={(event) => {
-                        const label = PACKAGING_TYPES.find(([value]) => value === event.target.value)?.[1] || "Outra";
-                        updatePackagingOption(index, "type", event.target.value);
-                        if (!option.name || PACKAGING_TYPES.some(([, currentLabel]) => currentLabel === option.name)) {
-                          updatePackagingOption(index, "name", label);
-                        }
-                      }}
-                    >
-                      {PACKAGING_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Nome exibido" required hint="Ex.: Caixa, Grade, Fardo com 6.">
-                    <input value={option.name} onChange={(event) => updatePackagingOption(index, "name", event.target.value)} required />
-                  </Field>
-                  <Field label="Unidades contidas" required>
-                    <input type="number" min="2" step="1" value={option.units_per_package} onChange={(event) => updatePackagingOption(index, "units_per_package", event.target.value)} required />
-                  </Field>
-                  <button type="button" className="icon-btn danger" onClick={() => removePackagingOption(index)} aria-label={`Remover ${option.name || "forma de saída"}`}><Trash2 size={16} /></button>
-                </div>
-              ))}
-              {!form.packaging_options?.length && <div className="packaging-empty">Este produto será retirado somente por unidade até que outra forma seja cadastrada.</div>}
+
+              <div className="packaging-type-create">
+                <Field label="Criar novo tipo de embalagem" hint="Ex.: Caixa térmica, Engradado retornável ou Pacote.">
+                  <input value={newPackagingType} onChange={(event) => setNewPackagingType(event.target.value)} placeholder="Digite um novo tipo" />
+                </Field>
+                <Button type="button" variant="secondary" icon={Plus} disabled={creatingPackagingType} onClick={createPackagingType}>
+                  {creatingPackagingType ? "Criando..." : "Criar e adicionar"}
+                </Button>
+              </div>
+
+              {(form.packaging_options || []).map((option, index) => {
+                const typeName = optionTypeName(option, packagingTypes);
+                const duplicateTypes = new Set((form.packaging_options || []).filter((_, optionIndex) => optionIndex !== index).map((item) => String(item.packaging_type)));
+                return (
+                  <div className="packaging-option-card" key={option.id || index}>
+                    <div className="packaging-option-fields">
+                      <Field label="Tipo de embalagem" required>
+                        <select value={option.packaging_type || ""} onChange={(event) => updatePackagingOption(index, "packaging_type", event.target.value)} required>
+                          <option value="">Selecione o tipo</option>
+                          {packagingTypes.map((type) => (
+                            <option key={type.id} value={type.id} disabled={duplicateTypes.has(String(type.id)) || (!type.active && String(option.packaging_type) !== String(type.id))}>
+                              {type.name}{type.active ? "" : " (inativo)"}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label={`Quantidade de unidades contidas em cada ${typeName}`} required hint={`Ex.: se 1 ${typeName} contém 12 unidades, digite 12.`}>
+                        <input type="number" min="2" step="1" value={option.units_per_package} onChange={(event) => updatePackagingOption(index, "units_per_package", event.target.value)} required />
+                      </Field>
+                      <Field label={`Preço de custo por ${typeName}`} required hint={`Valor pago por 1 ${typeName} completo.`}>
+                        <input type="text" inputMode="decimal" value={option.cost_price} onChange={(event) => updatePackagingOption(index, "cost_price", event.target.value)} onBlur={() => updatePackagingOption(index, "cost_price", formatMoneyInput(option.cost_price))} required />
+                      </Field>
+                      <Field label={`Preço de venda por ${typeName}`} required hint={`Valor cobrado por 1 ${typeName} completo, sem multiplicar novamente pelas unidades.`}>
+                        <input type="text" inputMode="decimal" value={option.sale_price} onChange={(event) => updatePackagingOption(index, "sale_price", event.target.value)} onBlur={() => updatePackagingOption(index, "sale_price", formatMoneyInput(option.sale_price))} required />
+                      </Field>
+                    </div>
+                    <div className="packaging-option-footer">
+                      <label className="checkbox-line">
+                        <input type="checkbox" checked={Boolean(option.is_default)} onChange={(event) => updatePackagingOption(index, "is_default", event.target.checked)} />
+                        <span>Usar {typeName} como forma inicial nas novas entradas e saídas</span>
+                      </label>
+                      <label className="checkbox-line">
+                        <input type="checkbox" checked={option.active !== false} onChange={(event) => updatePackagingOption(index, "active", event.target.checked)} />
+                        <span>Disponível para novas operações</span>
+                      </label>
+                      <div className="packaging-conversion-preview">
+                        <Check size={16} /> 1 {typeName} = {option.units_per_package || 0} unidades individuais
+                      </div>
+                      <button type="button" className="icon-btn danger" onClick={() => removePackagingOption(index)} aria-label={`Remover ${typeName}`}><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                );
+              })}
+              {!form.packaging_options?.length && <div className="packaging-empty">Nenhuma embalagem adicional cadastrada. Este produto poderá entrar e sair somente como unidade individual.</div>}
             </div>
 
             <Field label="Descrição">
