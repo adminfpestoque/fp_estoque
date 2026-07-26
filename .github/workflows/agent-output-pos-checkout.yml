@@ -23,29 +23,57 @@ jobs:
       - name: Reconstruct and apply output checkout patch
         shell: bash
         run: |
-          set -euo pipefail
-          cat .agent-tools/output-pos.patch.gz.b64.part* > /tmp/output-pos.patch.gz.b64
-          echo "6dbc2276ccf175d8f581a7a92c1efd339b5a9f8cfbc63cc4ab3f183d5ac6501a  /tmp/output-pos.patch.gz.b64" | sha256sum -c -
-          base64 --decode /tmp/output-pos.patch.gz.b64 > /tmp/output-pos.patch.gz
-          echo "1cbb8d61ce5f1858de8c47a86acd88a190b70f031383b861944ba208423b596a  /tmp/output-pos.patch.gz" | sha256sum -c -
-          gzip --decompress --stdout /tmp/output-pos.patch.gz > /tmp/output-pos.patch
-          echo "aa2b56dce9a3e32c30f362d5e46c750e2ab621bc670f752888aa7e3515991b37  /tmp/output-pos.patch" | sha256sum -c -
+          run_patch() {
+            set -euo pipefail
+            cat .agent-tools/output-pos.patch.gz.b64.part* > /tmp/output-pos.patch.gz.b64
+            echo "Base64 size and digest"
+            wc -c /tmp/output-pos.patch.gz.b64
+            sha256sum /tmp/output-pos.patch.gz.b64
+            echo "6dbc2276ccf175d8f581a7a92c1efd339b5a9f8cfbc63cc4ab3f183d5ac6501a  /tmp/output-pos.patch.gz.b64" | sha256sum -c -
 
-          git config user.name "adminfpestoque"
-          git config user.email "adminfpestoque@users.noreply.github.com"
-          git fetch origin main
-          git checkout -B agent/output-pos-checkout-ready origin/main
+            base64 --decode /tmp/output-pos.patch.gz.b64 > /tmp/output-pos.patch.gz
+            echo "Gzip size and digest"
+            wc -c /tmp/output-pos.patch.gz
+            sha256sum /tmp/output-pos.patch.gz
+            echo "1cbb8d61ce5f1858de8c47a86acd88a190b70f031383b861944ba208423b596a  /tmp/output-pos.patch.gz" | sha256sum -c -
 
-          git apply --check /tmp/output-pos.patch
-          git apply /tmp/output-pos.patch
+            gzip --decompress --stdout /tmp/output-pos.patch.gz > /tmp/output-pos.patch
+            echo "Patch size and digest"
+            wc -c /tmp/output-pos.patch
+            sha256sum /tmp/output-pos.patch
+            echo "aa2b56dce9a3e32c30f362d5e46c750e2ab621bc670f752888aa7e3515991b37  /tmp/output-pos.patch" | sha256sum -c -
 
-          git add backend/inventory
-          git commit -m "feat: support product packaging and checkout payments"
+            git config user.name "adminfpestoque"
+            git config user.email "adminfpestoque@users.noreply.github.com"
+            git fetch origin main
+            git checkout -B agent/output-pos-checkout-ready origin/main
 
-          git add frontend/src
-          git commit -m "feat: complete output point-of-sale workflow"
+            git apply --check /tmp/output-pos.patch
+            git apply /tmp/output-pos.patch
 
-          test -z "$(git status --porcelain)"
+            git add backend/inventory
+            git commit -m "feat: support product packaging and checkout payments"
+
+            git add frontend/src
+            git commit -m "feat: complete output point-of-sale workflow"
+
+            test -z "$(git status --porcelain)"
+          }
+
+          set +e
+          run_patch > /tmp/output-pos-diagnostic.txt 2>&1
+          result=$?
+          set -e
+          cat /tmp/output-pos-diagnostic.txt
+          exit "$result"
+
+      - name: Upload patch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-pos-patch-diagnostics
+          path: /tmp/output-pos-diagnostic.txt
+          retention-days: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
