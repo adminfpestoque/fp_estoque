@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/fix-product-references-and-document-ui
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -70,4 +73,5 @@ jobs:
           npm audit --omit=dev
 
       - name: Publish validated commits
+        if: github.event_name == 'push'
         run: git push origin agent/fix-product-references-and-document-ui-ready --force
