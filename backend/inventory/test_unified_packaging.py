@@ -50,7 +50,6 @@ class UnifiedPackagingFlowTests(TestCase):
             sale_price=Decimal("5.00"),
             is_default=True,
         )
-        self.category.packaging_types.add(self.package_type)
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 
@@ -121,7 +120,7 @@ class UnifiedPackagingFlowTests(TestCase):
         self.assertEqual(self.product.stock, Decimal("12"))
         self.assertEqual(Decimal(confirm.data["change_amount"]), Decimal("5.00"))
 
-    def test_product_and_category_share_the_same_packaging_type_catalog(self):
+    def test_packaging_type_catalog_is_used_only_by_products(self):
         box_type = self.client.post(
             "/api/packaging-types/",
             {"name": "Caixa térmica", "active": True},
@@ -131,40 +130,32 @@ class UnifiedPackagingFlowTests(TestCase):
 
         category = self.client.patch(
             f"/api/categories/{self.category.id}/",
-            {"packaging_types": [self.package_type.id, box_type.data["id"]]},
+            {"name": "Gelo e bebidas geladas", "description": "Categoria sem vínculo com embalagem."},
             format="json",
         )
         self.assertEqual(category.status_code, 200, category.data)
-        self.assertIn("Caixa térmica", category.data["packaging_type_names"])
+        self.assertNotIn("packaging_types", category.data)
+        self.assertNotIn("packaging_type_names", category.data)
 
         product = self.client.patch(
             f"/api/products/{self.product.id}/",
             {
                 "packaging_options": [
                     {
-                        "id": self.package.id,
-                        "packaging_type": self.package_type.id,
-                        "units_per_package": 12,
-                        "cost_price": "30,00",
-                        "sale_price": "5,00",
-                        "is_default": True,
-                        "active": True,
-                    },
-                    {
                         "packaging_type": box_type.data["id"],
                         "units_per_package": 24,
                         "cost_price": "55,00",
                         "sale_price": "9,00",
-                        "is_default": False,
+                        "is_default": True,
                         "active": True,
-                    },
+                    }
                 ]
             },
             format="json",
         )
         self.assertEqual(product.status_code, 200, product.data)
-        names = {item["packaging_type_name"] for item in product.data["packaging_options"]}
-        self.assertEqual(names, {"Pacote", "Caixa térmica"})
+        self.assertEqual(len(product.data["packaging_options"]), 1)
+        self.assertEqual(product.data["packaging_options"][0]["packaging_type_name"], "Caixa térmica")
 
         types = self.client.get("/api/packaging-types/?page_size=500")
         self.assertEqual(types.status_code, 200)

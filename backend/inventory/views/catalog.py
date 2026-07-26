@@ -145,7 +145,7 @@ class UserViewSet(BaseViewSet):
 
 
 class CategoryViewSet(BaseViewSet):
-    queryset = Category.objects.prefetch_related("packaging_types").all()
+    queryset = Category.objects.all()
     serializer_class = CategorySerializer
     search_fields = ["name", "description"]
     filterset_fields = ["active"]
@@ -167,22 +167,19 @@ class PackagingTypeViewSet(BaseViewSet):
     def get_queryset(self):
         return PackagingType.objects.annotate(
             products_count=Count("product_options", distinct=True),
-            categories_count=Count("categories", distinct=True),
         ).order_by("name")
 
     def destroy(self, request, *args, **kwargs):
         packaging_type = self.get_object()
         product_count = packaging_type.product_options.count()
-        category_count = packaging_type.categories.count()
-        if product_count or category_count:
+        if product_count:
             return Response(
                 {
                     "detail": (
-                        "Este tipo de embalagem está sendo usado por produtos ou categorias. "
-                        "Remova os vínculos ou inative o tipo para preservar o histórico."
+                        "Este tipo de embalagem está sendo usado por produtos. "
+                        "Altere os produtos vinculados ou inative o tipo para preservar o histórico."
                     ),
                     "products_count": product_count,
-                    "categories_count": category_count,
                     "can_deactivate": packaging_type.active,
                 },
                 status=status.HTTP_409_CONFLICT,

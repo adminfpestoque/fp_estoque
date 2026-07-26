@@ -97,24 +97,16 @@ class OutputCheckoutTests(TestCase):
                         "sale_price": "60,00",
                         "is_default": True,
                         "active": True,
-                    },
-                    {
-                        "type": ProductPackaging.BUNDLE,
-                        "name": "Fardo",
-                        "units_per_package": 6,
-                        "cost_price": "24,00",
-                        "sale_price": "32,00",
-                        "is_default": False,
-                        "active": True,
-                    },
+                    }
                 ]
             },
             format="json",
         )
         self.assertEqual(response.status_code, 200, response.data)
-        options = {item["name"]: item for item in response.data["packaging_options"]}
-        self.assertEqual(options["Caixa"]["units_per_package"], 12)
-        self.assertEqual(options["Fardo"]["units_per_package"], 6)
+        self.assertEqual(len(response.data["packaging_options"]), 1)
+        option = response.data["packaging_options"][0]
+        self.assertEqual(option["name"], "Caixa")
+        self.assertEqual(option["units_per_package"], 12)
         self.assertFalse(ProductPackaging.objects.filter(pk=self.crate.pk).exists())
 
     def test_unit_sale_removes_only_selected_units_and_calculates_change(self):

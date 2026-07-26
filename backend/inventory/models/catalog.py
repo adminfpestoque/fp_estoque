@@ -9,7 +9,7 @@ from .base import TimeStamped
 
 
 class PackagingType(TimeStamped):
-    """Catálogo único de formas de embalagem usado por categorias e produtos."""
+    """Catálogo de tipos de embalagem usado exclusivamente pelos produtos."""
 
     name = models.CharField(max_length=60, unique=True)
     active = models.BooleanField(default=True)
@@ -38,12 +38,6 @@ class Category(TimeStamped):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     active = models.BooleanField(default=True)
-    packaging_types = models.ManyToManyField(
-        PackagingType,
-        blank=True,
-        related_name="categories",
-    )
-
     class Meta:
         ordering = ["name"]
 
@@ -280,8 +274,6 @@ class ProductPackaging(TimeStamped):
                 is_default=True,
             ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
-        if self.product_id and self.packaging_type_id:
-            self.product.category.packaging_types.add(self.packaging_type)
 
     @property
     def display_name(self):
