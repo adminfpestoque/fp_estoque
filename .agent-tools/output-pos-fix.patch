@@ -1,0 +1,12 @@
+diff --git a/backend/inventory/serializers/documents.py b/backend/inventory/serializers/documents.py
+--- a/backend/inventory/serializers/documents.py
++++ b/backend/inventory/serializers/documents.py
+@@ -131,7 +131,7 @@ class StockEntrySerializer(serializers.ModelSerializer):
+ 
+             instance.recalculate_total()
+             if was_confirmed:
+-                instance.confirm(request_user, require_payment=True)
++                instance.confirm(request_user)
+             instance.refresh_from_db()
+             return instance
+         except DjangoValidationError as exc:
