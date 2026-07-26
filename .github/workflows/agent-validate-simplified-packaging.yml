@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/simplify-category-product-packaging
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
