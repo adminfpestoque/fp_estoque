@@ -1,0 +1,26 @@
+--- a/backend/inventory/serializers/catalog.py
++++ b/backend/inventory/serializers/catalog.py
+@@ -243,6 +243,23 @@
+             )
+         return normalized
+ 
++    def validate(self, attrs):
++        minimum = attrs.get(
++            "minimum_stock", getattr(self.instance, "minimum_stock", 0)
++        )
++        maximum = attrs.get(
++            "maximum_stock", getattr(self.instance, "maximum_stock", 0)
++        )
++        if maximum and maximum < minimum:
++            raise serializers.ValidationError(
++                {"maximum_stock": "O estoque máximo não pode ser menor que o mínimo."}
++            )
++        if "packaging_options" in attrs:
++            attrs["packaging_options"] = self._validate_packaging_options(
++                attrs.get("packaging_options")
++            )
++        return attrs
++
+     @staticmethod
+     def _sync_packaging_options(product, options):
+         existing = {item.id: item for item in product.packaging_options.all()}
