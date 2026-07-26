@@ -79,7 +79,7 @@ function defaultMovementOption(product) {
 
 function quantityFieldLabel(option) {
   if (!option || option.factor === 1) return "Quantidade de unidades";
-  return `Quantidade de embalagens do tipo ${option.name}`;
+  return `Quantidade de ${option.name}`;
 }
 
 function costFieldLabel(option) {
@@ -534,8 +534,8 @@ export function DocumentPage({ type, notify, me }) {
         title={isEntry ? "Entradas de estoque" : "Saídas e caixa"}
         description={
           isEntry
-            ? "Registre compras por unidade, caixa, fardo, pacote ou outra embalagem e converta automaticamente para unidades de estoque."
-            : "Escolha o produto, a forma de retirada e a quantidade. O sistema converte tudo para unidades e calcula o pagamento."
+            ? "Registre os produtos recebidos e o sistema atualizará o estoque em unidades individuais."
+            : "Registre vendas e outras retiradas com cálculo automático do estoque e do pagamento."
         }
         actions={<Button icon={Plus} onClick={start}>{isEntry ? "Nova entrada" : "Nova saída"}</Button>}
       />
@@ -618,7 +618,7 @@ export function DocumentPage({ type, notify, me }) {
               <Field label="Data e hora da entrada" required><input type="datetime-local" value={form.entry_date} onChange={(event) => setForm({ ...form, entry_date: event.target.value })} required /></Field>
             </div>
 
-            <div className="checkout-products-heading"><div><h3>Produtos recebidos</h3><p>Escolha a forma recebida. O sistema transforma caixas, fardos e pacotes em unidades reais de estoque.</p></div><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...entryItem }] })}>Adicionar produto</Button></div>
+            <div className="checkout-products-heading"><div><h3>Itens da entrada</h3><p>Selecione o produto, a forma recebida e a quantidade.</p></div><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...entryItem }] })}>Adicionar produto</Button></div>
 
             <div className="checkout-items entry-items">
               {form.items.map((item, index) => {
@@ -629,19 +629,19 @@ export function DocumentPage({ type, notify, me }) {
                   <div className="checkout-item-card entry-item-card" key={item.id || index}>
                     <div className="checkout-item-number">{index + 1}</div>
                     <div className="entry-item-fields">
-                      <Field label="Produto recebido" required><select value={item.product || ""} onChange={(event) => changeEntryProduct(index, event.target.value)} required><option value="">Selecione o produto</option>{products.filter((row) => row.active || String(row.id) === String(item.product)).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></Field>
-                      <Field label="Forma de entrada" required hint={!product ? "Selecione o produto primeiro." : "A forma padrão do produto já vem selecionada, mas pode ser alterada para Unidade ou outra embalagem."}><select value={item.packaging || ""} onChange={(event) => changeEntryUnit(index, event.target.value)} disabled={!product} required>{options.map((option) => <option key={option.id || "unit"} value={option.id}>{option.name} — contém {option.factor} {option.factor === 1 ? "unidade" : "unidades"}</option>)}</select></Field>
-                      <Field label={quantityFieldLabel(line?.selected)} required hint="Informe quantas unidades ou embalagens foram recebidas."><input type="number" min="1" step="1" value={item.entry_quantity} onChange={(event) => updateItem(index, "entry_quantity", event.target.value)} required /></Field>
-                      <Field label={costFieldLabel(line?.selected)} required hint="Valor pago por cada unidade, caixa, fardo, pacote ou outra forma selecionada."><input type="text" inputMode="decimal" value={item.purchase_price} onChange={(event) => updateItem(index, "purchase_price", event.target.value)} onBlur={() => updateItem(index, "purchase_price", formatMoneyInput(item.purchase_price))} required /></Field>
+                      <Field label="Produto" required><select value={item.product || ""} onChange={(event) => changeEntryProduct(index, event.target.value)} required><option value="">Selecione o produto</option>{products.filter((row) => row.active || String(row.id) === String(item.product)).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></Field>
+                      <Field label="Recebido em" required hint={!product ? "Selecione o produto primeiro." : "A forma padrão do produto já vem selecionada, mas pode ser alterada para Unidade ou outra embalagem."}><select value={item.packaging || ""} onChange={(event) => changeEntryUnit(index, event.target.value)} disabled={!product} required>{options.map((option) => <option key={option.id || "unit"} value={option.id}>{option.name} — contém {option.factor} {option.factor === 1 ? "unidade" : "unidades"}</option>)}</select></Field>
+                      <Field label={quantityFieldLabel(line?.selected)} required hint="Digite a quantidade da forma selecionada."><input type="number" min="1" step="1" value={item.entry_quantity} onChange={(event) => updateItem(index, "entry_quantity", event.target.value)} required /></Field>
+                      <Field label={costFieldLabel(line?.selected)} required hint="Valor pago por uma unidade da forma selecionada."><input type="text" inputMode="decimal" value={item.purchase_price} onChange={(event) => updateItem(index, "purchase_price", event.target.value)} onBlur={() => updateItem(index, "purchase_price", formatMoneyInput(item.purchase_price))} required /></Field>
                       <Field label="Número ou identificação do lote"><input value={item.lot_number || ""} onChange={(event) => updateItem(index, "lot_number", event.target.value)} placeholder="Opcional" /></Field>
                       <Field label="Data de fabricação"><input type="date" value={item.manufacturing_date || ""} onChange={(event) => updateItem(index, "manufacturing_date", event.target.value)} /></Field>
                       <Field label="Data de validade"><input type="date" value={item.expiration_date || ""} onChange={(event) => updateItem(index, "expiration_date", event.target.value)} /></Field>
                     </div>
                     <div className="checkout-item-summary entry-item-summary">
-                      <span>Conversão para o estoque</span>
+                      <span>Entrada no estoque</span>
                       <strong>{fmtQty(line?.entryQuantity || 0)} {line?.selected?.name || "Unidade"}</strong>
                       <div className="checkout-conversion-equation"><span>{fmtQty(line?.entryQuantity || 0)} × {fmtQty(line?.selected?.factor || 1)}</span><b>=</b><strong>{fmtQty(line?.stockQuantity || 0)} unidades</strong></div>
-                      <small>Custo equivalente por unidade: {fmtMoney(line?.unitCost || 0)}</small>
+                      
                       <span>Valor total deste item</span>
                       <strong>{fmtMoney(line?.subtotal || 0)}</strong>
                     </div>
@@ -651,7 +651,7 @@ export function DocumentPage({ type, notify, me }) {
               })}
             </div>
 
-            <div className="entry-total-summary"><span>Total de unidades adicionadas: <strong>{fmtQty(entryCalculation.units)} UN</strong></span><span>Valor total da compra: <strong>{fmtMoney(entryCalculation.total)}</strong></span></div>
+            <div className="entry-total-summary"><span>Unidades adicionadas: <strong>{fmtQty(entryCalculation.units)} UN</strong></span><span>Total da entrada: <strong>{fmtMoney(entryCalculation.total)}</strong></span></div>
             <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setForm(null)} disabled={busy}>Cancelar</Button><Button disabled={busy || entryCalculation.invalidSelection}>{busy ? "Salvando..." : form.id ? "Salvar alterações" : "Salvar rascunho"}</Button></div>
           </form>
         </Modal>
@@ -669,7 +669,7 @@ export function DocumentPage({ type, notify, me }) {
                   <Field label="Cliente"><input value={form.customer_name || ""} onChange={(event) => setForm({ ...form, customer_name: event.target.value })} placeholder="Nome ou identificação do cliente" /></Field>
                 </div>
 
-                <div className="checkout-products-heading"><div><h3>Produtos da saída</h3><p>Para cada produto: escolha como ele será retirado, informe quantas embalagens ou unidades e confira a baixa real no estoque.</p></div><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...outputItem }] })}>Adicionar produto</Button></div>
+                <div className="checkout-products-heading"><div><h3>Itens da saída</h3><p>Selecione o produto, a forma de retirada e a quantidade.</p></div><Button type="button" variant="secondary" icon={Plus} onClick={() => setForm({ ...form, items: [...form.items, { ...outputItem }] })}>Adicionar produto</Button></div>
 
                 <div className="checkout-items">
                   {form.items.map((item, index) => {
@@ -681,9 +681,9 @@ export function DocumentPage({ type, notify, me }) {
                       <div className={`checkout-item-card ${lineInsufficient ? "invalid" : ""}`} key={item.id || index}>
                         <div className="checkout-item-number">{index + 1}</div>
                         <div className="checkout-item-fields">
-                          <Field label="1. Produto" required><select value={item.product || ""} onChange={(event) => changeOutputProduct(index, event.target.value)} required><option value="">Selecione o produto</option>{products.filter((row) => row.active || String(row.id) === String(item.product)).map((row) => <option key={row.id} value={row.id}>{row.name} — {fmtQty(row.stock)} unidades disponíveis</option>)}</select></Field>
+                          <Field label="Produto" required><select value={item.product || ""} onChange={(event) => changeOutputProduct(index, event.target.value)} required><option value="">Selecione o produto</option>{products.filter((row) => row.active || String(row.id) === String(item.product)).map((row) => <option key={row.id} value={row.id}>{row.name} — {fmtQty(row.stock)} unidades disponíveis</option>)}</select></Field>
                           <Field
-                            label="2. Retirar como"
+                            label="Retirar em"
                             hint={
                               !product
                                 ? "Selecione o produto primeiro."
@@ -700,11 +700,11 @@ export function DocumentPage({ type, notify, me }) {
                               ))}
                             </select>
                           </Field>
-                          <Field label={`3. Quantidade de ${line?.selected?.name || "Unidade"}`} required hint="Informe quantas unidades, caixas, fardos ou grades serão retirados."><input type="number" min="1" step="1" value={item.sale_quantity} onChange={(event) => updateItem(index, "sale_quantity", event.target.value)} required /></Field>
-                          <Field label="4. Lote" hint="Opcional: o sistema usa primeiro o lote que vence antes."><select value={item.lot || ""} onChange={(event) => updateItem(index, "lot", event.target.value)} disabled={!product}><option value="">Automático por validade</option>{lots.filter((lot) => String(lot.product) === String(item.product) && (Number(lot.quantity) > 0 || String(lot.id) === String(item.lot))).map((lot) => <option key={lot.id} value={lot.id}>{lot.number} — {fmtQty(lot.quantity)} unidades — {lot.expiration_date || "sem validade"}</option>)}</select></Field>
+                          <Field label={`Quantidade de ${line?.selected?.name || "Unidade"}`} required hint="Informe quantas unidades, caixas, fardos ou grades serão retirados."><input type="number" min="1" step="1" value={item.sale_quantity} onChange={(event) => updateItem(index, "sale_quantity", event.target.value)} required /></Field>
+                          <Field label="Lote (opcional)" hint="Opcional: o sistema usa primeiro o lote que vence antes."><select value={item.lot || ""} onChange={(event) => updateItem(index, "lot", event.target.value)} disabled={!product}><option value="">Automático por validade</option>{lots.filter((lot) => String(lot.product) === String(item.product) && (Number(lot.quantity) > 0 || String(lot.id) === String(item.lot))).map((lot) => <option key={lot.id} value={lot.id}>{lot.number} — {fmtQty(lot.quantity)} unidades — {lot.expiration_date || "sem validade"}</option>)}</select></Field>
                         </div>
                         <div className="checkout-item-summary">
-                          <span>Conversão da retirada</span>
+                          <span>Baixa no estoque</span>
                           <strong>{fmtQty(line?.saleQuantity || 0)} {line?.selected?.name || "Unidade"}</strong>
                           <div className="checkout-conversion-equation">
                             <span>{fmtQty(line?.saleQuantity || 0)} × {fmtQty(line?.selected?.factor || 1)}</span>
@@ -713,7 +713,7 @@ export function DocumentPage({ type, notify, me }) {
                           </div>
                           <small>Estoque: {fmtQty(line?.currentStock || 0)} → {fmtQty(line?.remainingStock || 0)} unidades</small>
                           <span>{fmtMoney(line?.formPrice || 0)} por {line?.selected?.name || "Unidade"}</span>
-                          <small>Equivale a {fmtMoney(line?.unitPrice || 0)} por unidade</small>
+                          
                           <strong>{fmtMoney(line?.subtotal || 0)}</strong>
                           {lineInsufficient && <small className="checkout-error">Estoque insuficiente</small>}
                         </div>
@@ -722,12 +722,11 @@ export function DocumentPage({ type, notify, me }) {
                     );
                   })}
                 </div>
-                <Field label="Observações da saída"><textarea value={form.notes || ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></Field>
               </div>
 
               <aside className="checkout-summary">
                 <div className="checkout-summary-title"><CircleDollarSign size={22} /><div><strong>Resumo do caixa</strong><small>{form.reason === "COMMERCIAL" ? "Venda e pagamento" : "Retirada sem cobrança"}</small></div></div>
-                <div className="checkout-total-row"><span>Total da saída</span><strong>{fmtMoney(outputCalculation.total)}</strong></div>
+                <div className="checkout-total-row"><span>{form.reason === "COMMERCIAL" ? "Total da venda" : "Valor da saída"}</span><strong>{fmtMoney(outputCalculation.total)}</strong></div>
 
                 {form.reason === "COMMERCIAL" ? (
                   <>
@@ -744,7 +743,7 @@ export function DocumentPage({ type, notify, me }) {
                   </>
                 ) : <div className="checkout-no-payment">Esta retirada não exige forma de pagamento. O estoque será atualizado normalmente.</div>}
 
-                <div className="checkout-stock-note"><strong>{fmtQty(outputCalculation.lines.reduce((sum, line) => sum + line.stockQuantity, 0))} UN</strong><span>Total de unidades baixadas do estoque</span></div>
+                <div className="checkout-stock-note"><strong>{fmtQty(outputCalculation.lines.reduce((sum, line) => sum + line.stockQuantity, 0))} UN</strong><span>Unidades retiradas do estoque</span></div>
                 {outputCalculation.invalidStock && <div className="checkout-warning">Revise as quantidades: um produto não possui estoque suficiente.</div>}
               </aside>
             </div>
