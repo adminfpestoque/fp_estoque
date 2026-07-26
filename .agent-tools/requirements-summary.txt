@@ -1,0 +1,1 @@
+Unificar tipos de embalagem entre categorias e produtos; entrada e saída por embalagem com conversão para unidades; preços por forma de movimentação; simplificar formulários e nomes dos campos.
