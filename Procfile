@@ -1,0 +1,1 @@
+web: cd backend && sh start.sh
