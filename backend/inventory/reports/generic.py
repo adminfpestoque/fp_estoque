@@ -66,9 +66,9 @@ def generic_report_data(report_type, params, user):
         entries = StockEntry.objects.select_related("supplier", "user").filter(entry_date__range=(start_dt, end_dt))
         if params.get("supplier"):
             entries = entries.filter(supplier_id=params["supplier"])
-        columns = ["Número", "Data", "Fornecedor", "Nota fiscal", "Itens", "Valor total", "Situação", "Responsável", "Observações"]
-        for entry in entries.annotate(items_count=Count("items")):
-            rows.append([entry.number, timezone.localtime(entry.entry_date).strftime("%d/%m/%Y %H:%M"), entry.supplier.name, entry.invoice_number or "-", entry.items_count, money(entry.total_value), entry.display_status, entry.user.get_full_name() or entry.user.username, entry.notes or "-"])
+        columns = ["Número", "Data", "Fornecedor", "Produtos diferentes", "Unidades recebidas", "Valor total da compra", "Situação", "Responsável"]
+        for entry in entries.annotate(items_count=Count("items"), units_count=Sum("items__quantity")):
+            rows.append([entry.number, timezone.localtime(entry.entry_date).strftime("%d/%m/%Y %H:%M"), entry.supplier.name, entry.items_count, decimal_text(entry.units_count or 0), money(entry.total_value), entry.display_status, entry.user.get_full_name() or entry.user.username])
         summary = {"entries": len(rows), "total_value": money(entries.aggregate(v=Sum("total_value"))["v"] or 0)}
 
     elif report_type == "outputs":

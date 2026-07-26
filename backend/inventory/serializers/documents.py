@@ -28,12 +28,20 @@ class StockEntryItemSerializer(serializers.ModelSerializer):
         required=True,
         allow_null=False,
     )
-    quantity = IntegerQuantityField(min_value=1)
-    unit_cost = MoneyField(max_digits=12, min_value=0)
+    packaging = serializers.PrimaryKeyRelatedField(
+        queryset=ProductPackaging.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    entry_quantity = IntegerQuantityField(min_value=1, required=False)
+    purchase_price = MoneyField(max_digits=12, min_value=0, required=False)
+    quantity = IntegerQuantityField(read_only=True)
+    unit_cost = MoneyField(max_digits=12, read_only=True)
     product_name = serializers.CharField(read_only=True)
     product_code = serializers.CharField(read_only=True)
     subtotal = MoneyField(max_digits=16, read_only=True)
     lot_number_display = serializers.CharField(source="lot.number", read_only=True)
+    entry_unit_description = serializers.CharField(read_only=True)
 
     class Meta:
         model = StockEntryItem
@@ -43,9 +51,57 @@ class StockEntryItemSerializer(serializers.ModelSerializer):
             "lot",
             "product_name_snapshot",
             "product_code_snapshot",
+            "entry_unit_name",
+            "conversion_factor",
+            "quantity",
+            "unit_cost",
             "created_at",
             "updated_at",
         ]
+
+    def to_internal_value(self, data):
+        # Compatibilidade com integrações antigas que enviavam quantidade e custo por unidade.
+        mutable = data.copy() if hasattr(data, "copy") else dict(data)
+        if mutable.get("entry_quantity") in (None, "") and mutable.get("quantity") not in (None, ""):
+            mutable["entry_quantity"] = mutable.get("quantity")
+        if mutable.get("purchase_price") in (None, "") and mutable.get("unit_cost") not in (None, ""):
+            mutable["purchase_price"] = mutable.get("unit_cost")
+        return super().to_internal_value(mutable)
+
+    def validate(self, attrs):
+        product = attrs.get("product")
+        packaging = attrs.get("packaging")
+        entry_quantity = attrs.get("entry_quantity") or 1
+        purchase_price = attrs.get("purchase_price")
+
+        if not product or product.deleted_at or not product.active:
+            raise serializers.ValidationError(
+                {"product": "Selecione um produto ativo e disponível para entrada."}
+            )
+        if packaging:
+            if packaging.product_id != product.id:
+                raise serializers.ValidationError(
+                    {"packaging": "A forma de entrada não pertence ao produto selecionado."}
+                )
+            if not packaging.active:
+                raise serializers.ValidationError(
+                    {"packaging": "A forma de entrada selecionada está inativa."}
+                )
+            attrs["entry_unit_name"] = packaging.display_name
+            attrs["conversion_factor"] = packaging.units_per_package
+            if purchase_price is None:
+                purchase_price = packaging.cost_price
+        else:
+            attrs["entry_unit_name"] = "Unidade"
+            attrs["conversion_factor"] = 1
+            if purchase_price is None:
+                purchase_price = product.cost_price
+
+        attrs["entry_quantity"] = entry_quantity
+        attrs["purchase_price"] = purchase_price
+        attrs["quantity"] = entry_quantity * attrs["conversion_factor"]
+        attrs["unit_cost"] = purchase_price / attrs["conversion_factor"]
+        return attrs
 
 
 class StockEntrySerializer(serializers.ModelSerializer):
@@ -152,6 +208,7 @@ class StockOutputItemSerializer(serializers.ModelSerializer):
     sale_quantity = IntegerQuantityField(min_value=1, required=False)
     quantity = IntegerQuantityField(read_only=True)
     unit_sale_price = MoneyField(max_digits=12, read_only=True)
+    sale_price = MoneyField(max_digits=12, read_only=True)
     subtotal = MoneyField(max_digits=16, read_only=True)
     product_name = serializers.CharField(read_only=True)
     product_code = serializers.CharField(read_only=True)
@@ -169,6 +226,7 @@ class StockOutputItemSerializer(serializers.ModelSerializer):
             "conversion_factor",
             "quantity",
             "unit_sale_price",
+            "sale_price",
             "created_at",
             "updated_at",
         ]
@@ -199,15 +257,17 @@ class StockOutputItemSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"packaging": "A forma de saída selecionada está inativa."}
                 )
-            attrs["sale_unit_name"] = packaging.name
+            attrs["sale_unit_name"] = packaging.display_name
             attrs["conversion_factor"] = packaging.units_per_package
+            attrs["sale_price"] = packaging.sale_price
         else:
             attrs["sale_unit_name"] = "Unidade"
             attrs["conversion_factor"] = 1
+            attrs["sale_price"] = product.sale_price
 
         attrs["sale_quantity"] = sale_quantity
         attrs["quantity"] = sale_quantity * attrs["conversion_factor"]
-        attrs["unit_sale_price"] = product.sale_price
+        attrs["unit_sale_price"] = attrs["sale_price"] / attrs["conversion_factor"]
 
         if lot:
             if lot.product_id != product.id:

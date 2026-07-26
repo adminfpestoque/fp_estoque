@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .base import NumberedDocument, TimeStamped
-from .catalog import Lot, Product, ProductSupplier, Supplier
+from .catalog import Lot, Product, ProductPackaging, ProductSupplier, Supplier
 
 
 class StockEntry(NumberedDocument):
@@ -59,7 +59,7 @@ class StockEntry(NumberedDocument):
         return "Excluída" if self.is_deleted else self.get_status_display()
 
     def recalculate_total(self):
-        total = sum((item.quantity * item.unit_cost for item in self.items.all()), Decimal("0"))
+        total = sum((item.subtotal for item in self.items.all()), Decimal("0"))
         self.total_value = total
         self.save(update_fields=["total_value", "updated_at"])
 
@@ -121,6 +121,10 @@ class StockEntry(NumberedDocument):
                     document=locked.number,
                     entry=locked,
                 )
+                if item.packaging_id and item.purchase_price > 0:
+                    packaging = ProductPackaging.objects.select_for_update().get(pk=item.packaging_id)
+                    packaging.cost_price = item.purchase_price
+                    packaging.save(update_fields=["cost_price", "updated_at"])
                 ProductSupplier.objects.update_or_create(
                     product=product,
                     supplier=locked.supplier,
@@ -206,6 +210,18 @@ class StockEntryItem(TimeStamped):
     )
     product_name_snapshot = models.CharField(max_length=180, blank=True)
     product_code_snapshot = models.CharField(max_length=50, blank=True)
+    packaging = models.ForeignKey(
+        ProductPackaging,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entry_items",
+    )
+    entry_unit_name = models.CharField(max_length=60, default="Unidade")
+    entry_quantity = models.PositiveIntegerField(default=1)
+    conversion_factor = models.PositiveIntegerField(default=1)
+    purchase_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Quantidade e custo por unidade real de estoque.
     quantity = models.DecimalField(max_digits=14, decimal_places=3)
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2)
     lot_number = models.CharField(max_length=80, blank=True)
@@ -216,13 +232,57 @@ class StockEntryItem(TimeStamped):
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=Q(quantity__gt=0, unit_cost__gte=0), name="inv_entry_item_values_valid")
+            models.CheckConstraint(
+                condition=Q(
+                    quantity__gt=0,
+                    unit_cost__gte=0,
+                    entry_quantity__gt=0,
+                    conversion_factor__gt=0,
+                    purchase_price__gte=0,
+                ),
+                name="inv_entry_item_packaging_values_valid",
+            )
         ]
 
     def save(self, *args, **kwargs):
+        if (
+            self._state.adding
+            and not self.packaging_id
+            and self.entry_quantity == 1
+            and self.quantity
+            and Decimal(self.quantity) > 1
+        ):
+            self.entry_quantity = int(Decimal(self.quantity))
+            if not self.purchase_price:
+                self.purchase_price = self.unit_cost
         if self.product_id:
             self.product_name_snapshot = self.product.name
             self.product_code_snapshot = self.product.code
+        if self.packaging_id:
+            self.entry_unit_name = self.packaging.display_name
+            self.conversion_factor = self.packaging.units_per_package
+            if not self.purchase_price:
+                if self.unit_cost:
+                    # Compatibilidade: custo antigo era informado por unidade individual.
+                    self.purchase_price = (
+                        Decimal(self.unit_cost) * Decimal(self.conversion_factor)
+                    ).quantize(Decimal("0.01"))
+                else:
+                    self.purchase_price = self.packaging.cost_price
+        else:
+            self.entry_unit_name = "Unidade"
+            self.conversion_factor = 1
+            if not self.purchase_price:
+                if self.unit_cost:
+                    self.purchase_price = Decimal(self.unit_cost)
+                elif self.product_id:
+                    self.purchase_price = self.product.cost_price
+        self.quantity = Decimal(self.entry_quantity) * Decimal(self.conversion_factor)
+        self.unit_cost = (
+            Decimal(self.purchase_price) / Decimal(self.conversion_factor)
+            if self.conversion_factor
+            else Decimal(self.purchase_price)
+        ).quantize(Decimal("0.01"))
         super().save(*args, **kwargs)
 
     @property
@@ -235,4 +295,11 @@ class StockEntryItem(TimeStamped):
 
     @property
     def subtotal(self):
-        return self.quantity * self.unit_cost
+        return Decimal(self.entry_quantity) * Decimal(self.purchase_price)
+
+    @property
+    def entry_unit_description(self):
+        if self.conversion_factor == 1:
+            return "Unidade"
+        return f"{self.entry_unit_name} ({self.conversion_factor} unidades)"
+

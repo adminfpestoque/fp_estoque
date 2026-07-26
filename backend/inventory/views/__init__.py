@@ -1,5 +1,5 @@
 from .alerts import AlertViewSet, AuditLogViewSet, NotificationViewSet, SystemSettingViewSet
-from .catalog import CategoryViewSet, LotViewSet, ProductViewSet, SupplierViewSet, UserViewSet
+from .catalog import CategoryViewSet, LotViewSet, PackagingTypeViewSet, ProductViewSet, SupplierViewSet, UserViewSet
 from .dashboard import dashboard
 from .documents import MovementViewSet, StockAdjustmentViewSet, StockEntryViewSet, StockOutputViewSet
 from .inventories import InventoryViewSet

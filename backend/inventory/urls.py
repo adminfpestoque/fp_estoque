@@ -9,6 +9,7 @@ from .views import (
     LotViewSet,
     MovementViewSet,
     NotificationViewSet,
+    PackagingTypeViewSet,
     ProductViewSet,
     StockAdjustmentViewSet,
     StockEntryViewSet,
@@ -29,6 +30,7 @@ from .views import (
 router = DefaultRouter()
 router.register("users", UserViewSet, basename="users")
 router.register("categories", CategoryViewSet)
+router.register("packaging-types", PackagingTypeViewSet, basename="packaging-types")
 router.register("suppliers", SupplierViewSet, basename="suppliers")
 router.register("products", ProductViewSet, basename="products")
 router.register("lots", LotViewSet)

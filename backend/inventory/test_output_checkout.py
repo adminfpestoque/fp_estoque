@@ -42,12 +42,17 @@ class OutputCheckoutTests(TestCase):
             type=ProductPackaging.BOX,
             name="Caixa",
             units_per_package=12,
+            cost_price=Decimal("48.00"),
+            sale_price=Decimal("60.00"),
+            is_default=True,
         )
         self.crate = ProductPackaging.objects.create(
             product=self.product,
             type=ProductPackaging.CRATE,
             name="Grade",
             units_per_package=24,
+            cost_price=Decimal("96.00"),
+            sale_price=Decimal("120.00"),
         )
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
@@ -88,12 +93,18 @@ class OutputCheckoutTests(TestCase):
                         "type": ProductPackaging.BOX,
                         "name": "Caixa",
                         "units_per_package": 12,
+                        "cost_price": "48,00",
+                        "sale_price": "60,00",
+                        "is_default": True,
                         "active": True,
                     },
                     {
                         "type": ProductPackaging.BUNDLE,
                         "name": "Fardo",
                         "units_per_package": 6,
+                        "cost_price": "24,00",
+                        "sale_price": "32,00",
+                        "is_default": False,
                         "active": True,
                     },
                 ]
@@ -132,7 +143,8 @@ class OutputCheckoutTests(TestCase):
         self.assertEqual(item["sale_unit_name"], "Caixa")
         self.assertEqual(item["conversion_factor"], 12)
         self.assertEqual(Decimal(item["quantity"]), Decimal("12"))
-        self.assertEqual(Decimal(item["subtotal"]), Decimal("72.00"))
+        self.assertEqual(Decimal(item["sale_price"]), Decimal("60.00"))
+        self.assertEqual(Decimal(item["subtotal"]), Decimal("60.00"))
 
     def test_cash_payment_requires_enough_received_value(self):
         create = self.client.post(
@@ -171,6 +183,8 @@ class OutputCheckoutTests(TestCase):
             name="Fardo",
             type=ProductPackaging.BUNDLE,
             units_per_package=6,
+            cost_price=Decimal("20.00"),
+            sale_price=Decimal("30.00"),
         )
         response = self.client.post(
             "/api/outputs/",

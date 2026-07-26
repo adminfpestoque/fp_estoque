@@ -54,7 +54,7 @@ class SoftDeletedDocumentViewSet(BaseViewSet):
 class StockEntryViewSet(SoftDeletedDocumentViewSet):
     queryset = StockEntry.objects.select_related(
         "supplier", "user", "cancelled_by", "deleted_by"
-    ).prefetch_related("items__product", "items__lot")
+    ).prefetch_related("items__product", "items__lot", "items__packaging__packaging_type")
     serializer_class = StockEntrySerializer
     filterset_fields = ["status", "supplier", "user"]
     search_fields = [
@@ -114,7 +114,7 @@ class StockEntryViewSet(SoftDeletedDocumentViewSet):
 class StockOutputViewSet(SoftDeletedDocumentViewSet):
     queryset = StockOutput.objects.select_related(
         "user", "cancelled_by", "deleted_by"
-    ).prefetch_related("items__product", "items__lot", "items__packaging")
+    ).prefetch_related("items__product", "items__lot", "items__packaging__packaging_type")
     serializer_class = StockOutputSerializer
     filterset_fields = ["status", "reason", "payment_method", "user"]
     search_fields = [

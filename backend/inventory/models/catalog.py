@@ -2,14 +2,47 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from .base import TimeStamped
+
+
+class PackagingType(TimeStamped):
+    """Catálogo único de formas de embalagem usado por categorias e produtos."""
+
+    name = models.CharField(max_length=60, unique=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["name"], name="inv_pack_type_name_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("name"),
+                name="inv_pack_type_name_ci_uniq",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        self.name = " ".join(str(self.name or "").strip().split())
+        if not self.name:
+            raise ValidationError("Informe o nome do tipo de embalagem.")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
 
 class Category(TimeStamped):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     active = models.BooleanField(default=True)
+    packaging_types = models.ManyToManyField(
+        PackagingType,
+        blank=True,
+        related_name="categories",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -142,12 +175,7 @@ class Product(TimeStamped):
 
 
 class ProductPackaging(TimeStamped):
-    """Formas de retirada configuradas por produto.
-
-    O estoque continua armazenado em unidades. Esta tabela informa quantas
-    unidades existem em uma caixa, fardo, grade ou outra apresentação usada
-    no caixa.
-    """
+    """Forma de compra e venda do produto convertida para unidades de estoque."""
 
     BOX = "BOX"
     BUNDLE = "BUNDLE"
@@ -171,32 +199,104 @@ class ProductPackaging(TimeStamped):
         on_delete=models.CASCADE,
         related_name="packaging_options",
     )
-    type = models.CharField(max_length=16, choices=TYPES, default=BOX)
-    name = models.CharField(max_length=50)
+    packaging_type = models.ForeignKey(
+        PackagingType,
+        on_delete=models.PROTECT,
+        related_name="product_options",
+    )
+    # Campos legados mantidos para compatibilidade com integrações antigas.
+    # O nome exibido sempre é sincronizado com packaging_type.
+    type = models.CharField(max_length=16, choices=TYPES, default=OTHER)
+    name = models.CharField(max_length=60)
     units_per_package = models.PositiveIntegerField()
+    cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_default = models.BooleanField(default=False)
     active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["units_per_package", "name"]
+        ordering = ["-is_default", "units_per_package", "packaging_type__name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["product", "name"],
-                name="inv_product_packaging_name_uniq",
+                fields=["product", "packaging_type"],
+                name="inv_product_packaging_type_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["product"],
+                condition=Q(is_default=True),
+                name="inv_product_one_default_packaging",
             ),
             models.CheckConstraint(
-                condition=Q(units_per_package__gt=1),
-                name="inv_product_packaging_units_gt_one",
+                condition=Q(
+                    units_per_package__gt=1,
+                    cost_price__gte=0,
+                    sale_price__gte=0,
+                ),
+                name="inv_product_packaging_values_valid",
             ),
         ]
 
+    @classmethod
+    def type_code_for_name(cls, name):
+        normalized = str(name or "").strip().casefold()
+        for code, label in cls.TYPES:
+            if label.casefold() == normalized:
+                return code
+        aliases = {
+            "grade": cls.CRATE,
+            "engradado": cls.CRATE,
+            "caixa": cls.BOX,
+            "fardo": cls.BUNDLE,
+            "pacote": cls.PACK,
+            "bandeja": cls.TRAY,
+            "saco": cls.BAG,
+        }
+        return aliases.get(normalized, cls.OTHER)
+
+    @staticmethod
+    def resolve_packaging_type(name):
+        normalized = " ".join(str(name or "").strip().split())
+        if not normalized:
+            raise ValidationError("Informe o tipo de embalagem.")
+        existing = PackagingType.objects.filter(name__iexact=normalized).first()
+        if existing:
+            return existing
+        return PackagingType.objects.create(name=normalized)
+
     def save(self, *args, **kwargs):
-        self.name = " ".join(str(self.name or self.get_type_display()).strip().split())
+        if not self.packaging_type_id:
+            legacy_name = self.name or self.get_type_display()
+            self.packaging_type = self.resolve_packaging_type(legacy_name)
+        self.name = self.packaging_type.name
+        if not self.type or self.type == self.OTHER:
+            self.type = self.type_code_for_name(self.packaging_type.name)
         if self.units_per_package <= 1:
-            raise ValidationError("Uma embalagem deve conter pelo menos 2 unidades.")
+            raise ValidationError("A embalagem deve conter pelo menos 2 unidades do produto.")
+        if self.cost_price < 0 or self.sale_price < 0:
+            raise ValidationError("Os preços da embalagem não podem ser negativos.")
+        if self.is_default and self.product_id:
+            ProductPackaging.objects.filter(
+                product_id=self.product_id,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
+        if self.product_id and self.packaging_type_id:
+            self.product.category.packaging_types.add(self.packaging_type)
+
+    @property
+    def display_name(self):
+        return self.packaging_type.name
+
+    @property
+    def unit_cost_price(self):
+        return self.cost_price / self.units_per_package if self.units_per_package else self.cost_price
+
+    @property
+    def unit_sale_price(self):
+        return self.sale_price / self.units_per_package if self.units_per_package else self.sale_price
 
     def __str__(self):
-        return f"{self.product.name} — {self.name} ({self.units_per_package} UN)"
+        return f"{self.product.name} — {self.display_name} ({self.units_per_package} unidades)"
 
 
 class ProductSupplier(TimeStamped):

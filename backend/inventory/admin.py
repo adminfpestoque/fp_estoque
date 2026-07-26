@@ -9,6 +9,7 @@ from .models import (
     Lot,
     Movement,
     Notification,
+    PackagingType,
     Product,
     ProductPackaging,
     ProductSupplier,
@@ -78,6 +79,7 @@ class InventoryAdmin(admin.ModelAdmin):
 for model in [
     UserProfile,
     Category,
+    PackagingType,
     Supplier,
     ProductSupplier,
     Lot,

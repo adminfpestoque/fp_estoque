@@ -7,6 +7,7 @@ from rest_framework.validators import UniqueValidator
 from ..models import (
     Category,
     Lot,
+    PackagingType,
     Product,
     ProductPackaging,
     ProductSupplier,
@@ -16,11 +17,46 @@ from ..validators import validate_document
 from .fields import IntegerQuantityField, MoneyField, NullableUniqueCharField
 
 
+class PackagingTypeSerializer(serializers.ModelSerializer):
+    products_count = serializers.IntegerField(read_only=True, required=False)
+    categories_count = serializers.IntegerField(read_only=True, required=False)
+
+    class Meta:
+        model = PackagingType
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_name(self, value):
+        name = " ".join(str(value or "").strip().split())
+        if not name:
+            raise serializers.ValidationError("Informe o nome do tipo de embalagem.")
+        queryset = PackagingType.objects.filter(name__iexact=name)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("Já existe um tipo de embalagem com este nome.")
+        if name.casefold() == "unidade":
+            raise serializers.ValidationError(
+                "Unidade é a forma padrão do sistema e não precisa ser cadastrada."
+            )
+        return name
+
+
 class CategorySerializer(serializers.ModelSerializer):
+    packaging_types = serializers.PrimaryKeyRelatedField(
+        queryset=PackagingType.objects.all(),
+        many=True,
+        required=False,
+    )
+    packaging_type_names = serializers.SerializerMethodField()
+
     class Meta:
         model = Category
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
+
+    def get_packaging_type_names(self, obj):
+        return [item.name for item in obj.packaging_types.all().order_by("name")]
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -59,19 +95,41 @@ class ProductSupplierSerializer(serializers.ModelSerializer):
 
 class ProductPackagingSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
+    name = serializers.CharField(required=False, allow_blank=True)
+    type = serializers.CharField(required=False, allow_blank=True)
+    packaging_type = serializers.PrimaryKeyRelatedField(
+        queryset=PackagingType.objects.all(),
+        required=False,
+    )
+    packaging_type_name = serializers.CharField(
+        source="packaging_type.name",
+        read_only=True,
+    )
     units_per_package = IntegerQuantityField(min_value=2)
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    cost_price = MoneyField(max_digits=12, min_value=0, default=0)
+    sale_price = MoneyField(max_digits=12, min_value=0, default=0)
+    type_display = serializers.CharField(source="packaging_type.name", read_only=True)
+    display_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = ProductPackaging
         fields = "__all__"
         read_only_fields = ["product", "created_at", "updated_at"]
 
-    def validate_name(self, value):
-        name = " ".join(str(value or "").strip().split())
-        if not name:
-            raise serializers.ValidationError("Informe o nome da forma de saída.")
-        return name
+    def validate(self, attrs):
+        packaging_type = attrs.get("packaging_type", getattr(self.instance, "packaging_type", None))
+        if not packaging_type:
+            # Compatibilidade: integrações antigas podem enviar name/type.
+            initial = getattr(self, "initial_data", {}) or {}
+            raw = attrs.get("name") or initial.get("name") or initial.get("packaging_type_name")
+            if raw:
+                packaging_type = ProductPackaging.resolve_packaging_type(raw)
+                attrs["packaging_type"] = packaging_type
+        if not packaging_type:
+            raise serializers.ValidationError({"packaging_type": "Selecione o tipo de embalagem."})
+        if not packaging_type.active and not self.instance:
+            raise serializers.ValidationError({"packaging_type": "O tipo de embalagem está inativo."})
+        return attrs
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -154,30 +212,44 @@ class ProductSerializer(serializers.ModelSerializer):
                 return code
 
     def _validate_packaging_options(self, options):
-        names = set()
+        type_ids = set()
         normalized = []
+        defaults = 0
         for option in options or []:
-            name = " ".join(str(option.get("name") or "").strip().split())
-            key = name.casefold()
-            if not name:
+            packaging_type = option.get("packaging_type")
+            if not packaging_type:
+                raw_name = option.get("name") or option.get("packaging_type_name")
+                if raw_name:
+                    packaging_type = ProductPackaging.resolve_packaging_type(raw_name)
+                    option["packaging_type"] = packaging_type
+            if not packaging_type:
                 raise serializers.ValidationError(
-                    {"packaging_options": "Informe o nome de todas as formas de saída."}
+                    {"packaging_options": "Selecione o tipo de todas as embalagens."}
                 )
-            if key == "unidade":
+            if packaging_type.name.casefold() == "unidade":
                 raise serializers.ValidationError(
                     {"packaging_options": "Unidade já é a forma padrão e não precisa ser cadastrada."}
                 )
-            if key in names:
+            if packaging_type.pk in type_ids:
                 raise serializers.ValidationError(
-                    {"packaging_options": f'A forma de saída "{name}" está repetida.'}
+                    {"packaging_options": f'O tipo "{packaging_type.name}" está repetido.'}
                 )
-            names.add(key)
-            normalized.append({**option, "name": name})
+            type_ids.add(packaging_type.pk)
+            defaults += 1 if option.get("is_default") else 0
+            normalized.append(option)
+        if defaults > 1:
+            raise serializers.ValidationError(
+                {"packaging_options": "Escolha somente uma embalagem padrão."}
+            )
         return normalized
 
     def validate(self, attrs):
-        minimum = attrs.get("minimum_stock", getattr(self.instance, "minimum_stock", 0))
-        maximum = attrs.get("maximum_stock", getattr(self.instance, "maximum_stock", 0))
+        minimum = attrs.get(
+            "minimum_stock", getattr(self.instance, "minimum_stock", 0)
+        )
+        maximum = attrs.get(
+            "maximum_stock", getattr(self.instance, "maximum_stock", 0)
+        )
         if maximum and maximum < minimum:
             raise serializers.ValidationError(
                 {"maximum_stock": "O estoque máximo não pode ser menor que o mínimo."}
@@ -192,13 +264,17 @@ class ProductSerializer(serializers.ModelSerializer):
     def _sync_packaging_options(product, options):
         existing = {item.id: item for item in product.packaging_options.all()}
         kept_ids = set()
-        for data in options:
+        for raw_data in options:
+            data = dict(raw_data)
             option_id = data.pop("id", None)
+            # Campos legados são derivados do catálogo global.
+            data.pop("name", None)
+            data.pop("type", None)
             if option_id:
                 option = existing.get(int(option_id))
                 if not option:
                     raise serializers.ValidationError(
-                        {"packaging_options": "Uma forma de saída informada não pertence a este produto."}
+                        {"packaging_options": "Uma embalagem informada não pertence a este produto."}
                     )
                 for key, value in data.items():
                     setattr(option, key, value)
@@ -207,7 +283,18 @@ class ProductSerializer(serializers.ModelSerializer):
             else:
                 option = ProductPackaging.objects.create(product=product, **data)
                 kept_ids.add(option.id)
-        product.packaging_options.exclude(id__in=kept_ids).delete()
+
+        removed = product.packaging_options.exclude(id__in=kept_ids)
+        if removed.filter(entry_items__isnull=False).exists() or removed.filter(output_items__isnull=False).exists():
+            removed.update(active=False, is_default=False)
+        else:
+            removed.delete()
+
+        # Sempre mantém uma forma padrão quando há embalagens ativas.
+        active_options = list(product.packaging_options.filter(active=True).order_by("pk"))
+        if active_options and not any(option.is_default for option in active_options):
+            active_options[0].is_default = True
+            active_options[0].save(update_fields=["is_default", "updated_at"])
 
     @transaction.atomic
     def create(self, validated_data):
@@ -218,6 +305,14 @@ class ProductSerializer(serializers.ModelSerializer):
         validated_data.setdefault("package_quantity", 1)
         product = super().create(validated_data)
         self._sync_packaging_options(product, packaging_options)
+        if packaging_options:
+            product.category.packaging_types.add(
+                *[item["packaging_type"] for item in packaging_options]
+            )
+            default_option = product.packaging_options.filter(is_default=True).first()
+            if default_option:
+                product.package_type = default_option.display_name
+                product.save(update_fields=["package_type", "updated_at"])
         return product
 
     @transaction.atomic
@@ -233,6 +328,13 @@ class ProductSerializer(serializers.ModelSerializer):
         product = super().update(instance, validated_data)
         if packaging_options is not None:
             self._sync_packaging_options(product, packaging_options)
+            if packaging_options:
+                product.category.packaging_types.add(
+                    *[item["packaging_type"] for item in packaging_options]
+                )
+            default_option = product.packaging_options.filter(is_default=True).first()
+            product.package_type = default_option.display_name if default_option else ""
+            product.save(update_fields=["package_type", "updated_at"])
         return product
 
 

@@ -284,6 +284,7 @@ class StockOutputItem(TimeStamped):
     conversion_factor = models.PositiveIntegerField(default=1)
     quantity = models.DecimalField(max_digits=14, decimal_places=3)
     unit_sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     lot = models.ForeignKey(Lot, on_delete=models.PROTECT, null=True, blank=True, related_name="output_items")
     notes = models.TextField(blank=True)
 
@@ -295,6 +296,7 @@ class StockOutputItem(TimeStamped):
                     sale_quantity__gt=0,
                     conversion_factor__gt=0,
                     unit_sale_price__gte=0,
+                    sale_price__gte=0,
                 ),
                 name="inv_output_item_values_valid",
             )
@@ -314,15 +316,31 @@ class StockOutputItem(TimeStamped):
         if self.product_id:
             self.product_name_snapshot = self.product.name
             self.product_code_snapshot = self.product.code
-            if not self.unit_sale_price:
-                self.unit_sale_price = self.product.sale_price
         if self.packaging_id:
-            self.sale_unit_name = self.packaging.name
+            self.sale_unit_name = self.packaging.display_name
             self.conversion_factor = self.packaging.units_per_package
+            if not self.sale_price:
+                if self.unit_sale_price:
+                    # Compatibilidade: o preço antigo era informado por unidade individual.
+                    self.sale_price = (
+                        Decimal(self.unit_sale_price) * Decimal(self.conversion_factor)
+                    ).quantize(Decimal("0.01"))
+                else:
+                    self.sale_price = self.packaging.sale_price
         else:
-            self.sale_unit_name = self.sale_unit_name or "Unidade"
+            self.sale_unit_name = "Unidade"
             self.conversion_factor = 1
+            if not self.sale_price:
+                if self.unit_sale_price:
+                    self.sale_price = Decimal(self.unit_sale_price)
+                elif self.product_id:
+                    self.sale_price = self.product.sale_price
         self.quantity = Decimal(self.sale_quantity) * Decimal(self.conversion_factor)
+        self.unit_sale_price = (
+            Decimal(self.sale_price) / Decimal(self.conversion_factor)
+            if self.conversion_factor
+            else Decimal(self.sale_price)
+        ).quantize(Decimal("0.01"))
         super().save(*args, **kwargs)
 
     @property
@@ -335,10 +353,10 @@ class StockOutputItem(TimeStamped):
 
     @property
     def subtotal(self):
-        return self.quantity * self.unit_sale_price
+        return Decimal(self.sale_quantity) * Decimal(self.sale_price)
 
     @property
     def sale_unit_description(self):
         if self.conversion_factor == 1:
             return "Unidade"
-        return f"{self.sale_unit_name} ({self.conversion_factor} UN)"
+        return f"{self.sale_unit_name} ({self.conversion_factor} unidades)"

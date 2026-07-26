@@ -10,12 +10,13 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from ..models import Category, Lot, Product, Supplier, SystemSetting, UserProfile
+from ..models import Category, Lot, PackagingType, Product, Supplier, SystemSetting, UserProfile
 from ..permissions import IsAdministrator, IsInventoryUser
 from ..serializers import (
     CategorySerializer,
     LotSerializer,
     MeSerializer,
+    PackagingTypeSerializer,
     ProductSerializer,
     SupplierSerializer,
     UserSerializer,
@@ -144,7 +145,7 @@ class UserViewSet(BaseViewSet):
 
 
 class CategoryViewSet(BaseViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.prefetch_related("packaging_types").all()
     serializer_class = CategorySerializer
     search_fields = ["name", "description"]
     filterset_fields = ["active"]
@@ -152,6 +153,44 @@ class CategoryViewSet(BaseViewSet):
     ordering_fields = ["name", "created_at"]
     supports_activation = True
     governance_name = "categoria"
+
+
+class PackagingTypeViewSet(BaseViewSet):
+    serializer_class = PackagingTypeSerializer
+    search_fields = ["name"]
+    filterset_fields = ["active"]
+    ordering = ["name"]
+    ordering_fields = ["name", "created_at"]
+    supports_activation = True
+    governance_name = "tipo de embalagem"
+
+    def get_queryset(self):
+        return PackagingType.objects.annotate(
+            products_count=Count("product_options", distinct=True),
+            categories_count=Count("categories", distinct=True),
+        ).order_by("name")
+
+    def destroy(self, request, *args, **kwargs):
+        packaging_type = self.get_object()
+        product_count = packaging_type.product_options.count()
+        category_count = packaging_type.categories.count()
+        if product_count or category_count:
+            return Response(
+                {
+                    "detail": (
+                        "Este tipo de embalagem está sendo usado por produtos ou categorias. "
+                        "Remova os vínculos ou inative o tipo para preservar o histórico."
+                    ),
+                    "products_count": product_count,
+                    "categories_count": category_count,
+                    "can_deactivate": packaging_type.active,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        name = packaging_type.name
+        packaging_type.delete()
+        audit(request.user, "DELETE", None, f'Tipo de embalagem "{name}" excluído.')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SupplierViewSet(BaseViewSet):
@@ -332,7 +371,7 @@ class ProductViewSet(BaseViewSet):
     def get_queryset(self):
         qs = (
             Product.objects.select_related("category", "supplier")
-            .prefetch_related("supplier_links__supplier", "packaging_options")
+            .prefetch_related("supplier_links__supplier", "packaging_options__packaging_type")
             .annotate(lots_count=Count("lots", distinct=True))
         )
         deleted = str(self.request.query_params.get("deleted") or "").lower()
