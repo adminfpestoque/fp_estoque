@@ -1,1 +1,1 @@
-trigger unified packaging validation after workflow creation
+trigger final unified packaging publication
