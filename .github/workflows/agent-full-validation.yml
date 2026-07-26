@@ -26,6 +26,8 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
       - name: Validate backend
+        id: backend
+        continue-on-error: true
         working-directory: backend
         env:
           USE_SQLITE_FOR_TESTS: "true"
@@ -34,35 +36,53 @@ jobs:
           ALLOW_LAN_DEV: "false"
         shell: bash
         run: |
-          set -euo pipefail
-          python manage.py check
-          python manage.py makemigrations --check --dry-run
-          rm -f db.sqlite3
-          python manage.py migrate --noinput
-          python manage.py test -v 2
-          python -m compileall -q .
+          set -o pipefail
+          {
+            python manage.py check
+            python manage.py makemigrations --check --dry-run
+            rm -f db.sqlite3
+            python manage.py migrate --noinput
+            python manage.py test -v 2
+            python -m compileall -q .
+          } 2>&1 | tee /tmp/backend-validation.log
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Validate frontend
+        id: frontend
+        continue-on-error: true
         working-directory: frontend
         shell: bash
         run: |
-          set -euo pipefail
-          npm ci
-          npm run build
-          npm audit --omit=dev
-      - name: Record successful validation
+          set -o pipefail
+          {
+            npm ci
+            npm run build
+            npm audit --omit=dev
+          } 2>&1 | tee /tmp/frontend-validation.log
+      - name: Record validation result
+        if: always()
+        env:
+          BACKEND_RESULT: ${{ steps.backend.outcome }}
+          FRONTEND_RESULT: ${{ steps.frontend.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          printf 'Backend checks, migrations, tests, Python compilation, frontend build and production dependency audit completed successfully.\n' > .agent-validation-success
+          {
+            printf 'Backend: %s\nFrontend: %s\n\n' "$BACKEND_RESULT" "$FRONTEND_RESULT"
+            printf '%s\n' '--- Backend log (last 120 lines) ---'
+            tail -n 120 /tmp/backend-validation.log 2>/dev/null || true
+            printf '\n%s\n' '--- Frontend log (last 80 lines) ---'
+            tail -n 80 /tmp/frontend-validation.log 2>/dev/null || true
+          } > .agent-validation-report.txt
           rm -f .agent-tools/run-full-validation
           rm -f .github/workflows/agent-full-validation.yml
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
-          git add .agent-validation-success .agent-tools .github/workflows
-          git commit -m "test: record successful full validation"
+          git add .agent-validation-report.txt .agent-tools .github/workflows
+          git commit -m "test: record full validation result"
           git push origin agent/fix-packaging-route-and-api-errors
+          test "$BACKEND_RESULT" = success
+          test "$FRONTEND_RESULT" = success
