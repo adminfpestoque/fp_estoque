@@ -6,6 +6,7 @@ from ..models import (
     Lot,
     Movement,
     Product,
+    ProductPackaging,
     StockAdjustment,
     StockEntry,
     StockEntryItem,
@@ -143,10 +144,19 @@ class StockOutputItemSerializer(serializers.ModelSerializer):
         required=True,
         allow_null=False,
     )
-    quantity = IntegerQuantityField(min_value=1)
+    packaging = serializers.PrimaryKeyRelatedField(
+        queryset=ProductPackaging.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    sale_quantity = IntegerQuantityField(min_value=1, required=False)
+    quantity = IntegerQuantityField(read_only=True)
+    unit_sale_price = MoneyField(max_digits=12, read_only=True)
+    subtotal = MoneyField(max_digits=16, read_only=True)
     product_name = serializers.CharField(read_only=True)
     product_code = serializers.CharField(read_only=True)
     lot_number = serializers.CharField(source="lot.number", read_only=True)
+    sale_unit_description = serializers.CharField(read_only=True)
 
     class Meta:
         model = StockOutputItem
@@ -155,22 +165,72 @@ class StockOutputItemSerializer(serializers.ModelSerializer):
             "output",
             "product_name_snapshot",
             "product_code_snapshot",
+            "sale_unit_name",
+            "conversion_factor",
+            "quantity",
+            "unit_sale_price",
             "created_at",
             "updated_at",
         ]
 
+    def to_internal_value(self, data):
+        # Compatibilidade com integrações antigas que enviavam apenas quantity.
+        mutable = data.copy() if hasattr(data, "copy") else dict(data)
+        if mutable.get("sale_quantity") in (None, "") and mutable.get("quantity") not in (None, ""):
+            mutable["sale_quantity"] = mutable.get("quantity")
+        return super().to_internal_value(mutable)
+
     def validate(self, attrs):
         product = attrs.get("product")
+        packaging = attrs.get("packaging")
         lot = attrs.get("lot")
-        if lot and product and lot.product_id != product.id:
-            raise serializers.ValidationError({"lot": "O lote não pertence ao produto selecionado."})
+        sale_quantity = attrs.get("sale_quantity") or 1
+
+        if not product or product.deleted_at or not product.active:
+            raise serializers.ValidationError(
+                {"product": "Selecione um produto ativo e disponível para venda."}
+            )
+        if packaging:
+            if packaging.product_id != product.id:
+                raise serializers.ValidationError(
+                    {"packaging": "A forma de saída não pertence ao produto selecionado."}
+                )
+            if not packaging.active:
+                raise serializers.ValidationError(
+                    {"packaging": "A forma de saída selecionada está inativa."}
+                )
+            attrs["sale_unit_name"] = packaging.name
+            attrs["conversion_factor"] = packaging.units_per_package
+        else:
+            attrs["sale_unit_name"] = "Unidade"
+            attrs["conversion_factor"] = 1
+
+        attrs["sale_quantity"] = sale_quantity
+        attrs["quantity"] = sale_quantity * attrs["conversion_factor"]
+        attrs["unit_sale_price"] = product.sale_price
+
+        if lot:
+            if lot.product_id != product.id:
+                raise serializers.ValidationError(
+                    {"lot": "O lote não pertence ao produto selecionado."}
+                )
+            if not lot.active or lot.quantity <= 0:
+                raise serializers.ValidationError(
+                    {"lot": "O lote selecionado não possui saldo disponível."}
+                )
         return attrs
 
 
 class StockOutputSerializer(serializers.ModelSerializer):
     items = StockOutputItemSerializer(many=True)
+    total_value = MoneyField(max_digits=14, read_only=True)
+    amount_received = MoneyField(max_digits=14, min_value=0, required=False)
+    change_amount = MoneyField(max_digits=14, read_only=True)
     user_name = serializers.CharField(source="user.username", read_only=True)
     reason_display = serializers.CharField(source="get_reason_display", read_only=True)
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display", read_only=True
+    )
     cancelled_by_name = serializers.CharField(source="cancelled_by.username", read_only=True)
     deleted_by_name = serializers.CharField(source="deleted_by.username", read_only=True)
     is_deleted = serializers.BooleanField(read_only=True)
@@ -183,6 +243,7 @@ class StockOutputSerializer(serializers.ModelSerializer):
             "number",
             "user",
             "status",
+            "total_value",
             "confirmed_at",
             "cancelled_at",
             "cancelled_by",
@@ -198,18 +259,39 @@ class StockOutputSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Inclua ao menos um produto.")
         return items
 
+    def validate(self, attrs):
+        reason = attrs.get("reason", getattr(self.instance, "reason", None))
+        payment_method = attrs.get(
+            "payment_method", getattr(self.instance, "payment_method", StockOutput.PAYMENT_NONE)
+        )
+        amount_received = attrs.get(
+            "amount_received", getattr(self.instance, "amount_received", 0)
+        )
+        if reason != "COMMERCIAL":
+            attrs["payment_method"] = StockOutput.PAYMENT_NONE
+            attrs["amount_received"] = 0
+            attrs["payment_reference"] = ""
+        elif payment_method == StockOutput.PAYMENT_CASH and amount_received is None:
+            attrs["amount_received"] = 0
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         items = validated_data.pop("items", [])
         output = StockOutput.objects.create(user=self.context["request"].user, **validated_data)
         for item in items:
             StockOutputItem.objects.create(output=output, **item)
+        output.recalculate_total()
         return output
 
     @transaction.atomic
     def update(self, instance, validated_data):
         if instance.is_deleted:
             raise serializers.ValidationError("Uma saída excluída não pode ser alterada.")
+        if instance.status == StockOutput.CANCELLED:
+            raise serializers.ValidationError(
+                "Uma saída cancelada é mantida apenas para histórico e não pode ser editada."
+            )
 
         request_user = self.context["request"].user
         items = validated_data.pop("items", None)
@@ -245,8 +327,9 @@ class StockOutputSerializer(serializers.ModelSerializer):
             if not instance.items.exists():
                 raise serializers.ValidationError({"items": "Inclua ao menos um produto."})
 
+            instance.recalculate_total()
             if was_confirmed:
-                instance.confirm(request_user)
+                instance.confirm(request_user, require_payment=True)
             instance.refresh_from_db()
             return instance
         except DjangoValidationError as exc:

@@ -114,16 +114,18 @@ class StockEntryViewSet(SoftDeletedDocumentViewSet):
 class StockOutputViewSet(SoftDeletedDocumentViewSet):
     queryset = StockOutput.objects.select_related(
         "user", "cancelled_by", "deleted_by"
-    ).prefetch_related("items__product", "items__lot")
+    ).prefetch_related("items__product", "items__lot", "items__packaging")
     serializer_class = StockOutputSerializer
-    filterset_fields = ["status", "reason", "user"]
+    filterset_fields = ["status", "reason", "payment_method", "user"]
     search_fields = [
         "number",
+        "customer_name",
+        "payment_reference",
         "notes",
         "items__product__name",
         "items__product_name_snapshot",
     ]
-    ordering_fields = ["output_date", "created_at", "deleted_at"]
+    ordering_fields = ["output_date", "total_value", "created_at", "deleted_at"]
     deleted_label = "saída"
 
     def perform_update(self, serializer):
@@ -140,7 +142,7 @@ class StockOutputViewSet(SoftDeletedDocumentViewSet):
     def confirm(self, request, pk=None):
         output = self.get_object()
         try:
-            output.confirm(request.user)
+            output.confirm(request.user, require_payment=True)
             refresh_alerts(notify=True)
             audit(request.user, "CONFIRM", output, f"Saída {output.number} confirmada.")
             notify_users(

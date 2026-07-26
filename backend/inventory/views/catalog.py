@@ -332,7 +332,7 @@ class ProductViewSet(BaseViewSet):
     def get_queryset(self):
         qs = (
             Product.objects.select_related("category", "supplier")
-            .prefetch_related("supplier_links__supplier")
+            .prefetch_related("supplier_links__supplier", "packaging_options")
             .annotate(lots_count=Count("lots", distinct=True))
         )
         deleted = str(self.request.query_params.get("deleted") or "").lower()

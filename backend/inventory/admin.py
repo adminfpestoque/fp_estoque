@@ -10,6 +10,7 @@ from .models import (
     Movement,
     Notification,
     Product,
+    ProductPackaging,
     ProductSupplier,
     StockAdjustment,
     StockEntry,
@@ -32,6 +33,11 @@ class OutputItemInline(admin.TabularInline):
     extra = 0
 
 
+class ProductPackagingInline(admin.TabularInline):
+    model = ProductPackaging
+    extra = 0
+
+
 class InventoryItemInline(admin.TabularInline):
     model = InventoryItem
     extra = 0
@@ -43,6 +49,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_filter = ("active", "category", "brand")
     search_fields = ("code", "sku", "barcode", "name", "brand")
     readonly_fields = ("stock", "created_at", "updated_at")
+    inlines = [ProductPackagingInline]
 
 
 @admin.register(StockEntry)
@@ -55,8 +62,8 @@ class StockEntryAdmin(admin.ModelAdmin):
 
 @admin.register(StockOutput)
 class StockOutputAdmin(admin.ModelAdmin):
-    list_display = ("number", "output_date", "reason", "status", "user")
-    list_filter = ("status", "reason")
+    list_display = ("number", "output_date", "reason", "payment_method", "total_value", "status", "user")
+    list_filter = ("status", "reason", "payment_method")
     search_fields = ("number", "notes")
     inlines = [OutputItemInline]
 

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -138,6 +139,64 @@ class Product(TimeStamped):
 
     def __str__(self):
         return self.name
+
+
+class ProductPackaging(TimeStamped):
+    """Formas de retirada configuradas por produto.
+
+    O estoque continua armazenado em unidades. Esta tabela informa quantas
+    unidades existem em uma caixa, fardo, grade ou outra apresentação usada
+    no caixa.
+    """
+
+    BOX = "BOX"
+    BUNDLE = "BUNDLE"
+    CRATE = "CRATE"
+    PACK = "PACK"
+    TRAY = "TRAY"
+    BAG = "BAG"
+    OTHER = "OTHER"
+    TYPES = [
+        (BOX, "Caixa"),
+        (BUNDLE, "Fardo"),
+        (CRATE, "Grade/engradado"),
+        (PACK, "Pacote"),
+        (TRAY, "Bandeja"),
+        (BAG, "Saco"),
+        (OTHER, "Outra"),
+    ]
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="packaging_options",
+    )
+    type = models.CharField(max_length=16, choices=TYPES, default=BOX)
+    name = models.CharField(max_length=50)
+    units_per_package = models.PositiveIntegerField()
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["units_per_package", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "name"],
+                name="inv_product_packaging_name_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(units_per_package__gt=1),
+                name="inv_product_packaging_units_gt_one",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.name = " ".join(str(self.name or self.get_type_display()).strip().split())
+        if self.units_per_package <= 1:
+            raise ValidationError("Uma embalagem deve conter pelo menos 2 unidades.")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.product.name} — {self.name} ({self.units_per_package} UN)"
 
 
 class ProductSupplier(TimeStamped):
