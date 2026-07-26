@@ -6,7 +6,9 @@ from .output import StockOutput, StockOutputItem
 from .adjustment import StockAdjustment
 from .counts import InventoryCount, InventoryItem
 from .users import UserProfile
-from . import credit as _credit  # noqa: F401 — registra os campos e validações de vendas a prazo
+from ..maximum_stock_retired import retire_product_maximum_stock
+
+retire_product_maximum_stock(Product)
 
 __all__ = [
     "Alert", "AuditLog", "Category", "InventoryCount", "InventoryItem", "Lot",

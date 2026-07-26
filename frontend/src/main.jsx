@@ -19,11 +19,13 @@ import { SettingsPage } from "./pages/settings.jsx";
 import { installReferenceFallbacks } from "./api-fallback.js";
 import { installCreditSaleEnhancements } from "./output-credit.js";
 import { installEntryProductColumn } from "./entry-products.js";
+import { installMaximumStockRemoval } from "./remove-maximum-stock.js";
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
 installReferenceFallbacks(api);
 installCreditSaleEnhancements(api);
 installEntryProductColumn(api);
+installMaximumStockRemoval(api);
 applyPreferences(loadStoredPreferences());
 
 function App() {
