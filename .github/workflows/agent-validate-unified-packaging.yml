@@ -25,6 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           cat .agent-tools/unified-packaging.patch.gz.b64.part* > /tmp/unified-packaging.patch.gz.b64
+          cp .agent-tools/unified-packaging-fix.patch /tmp/unified-packaging-fix.patch
           echo "c24346994d476d4911860a86a3ea5c94faf08d6b7db22716a25565802b3156e3  /tmp/unified-packaging.patch.gz.b64" | sha256sum -c -
           base64 --decode /tmp/unified-packaging.patch.gz.b64 > /tmp/unified-packaging.patch.gz
           echo "c1e8286062395092c2c4fac41a1a81e1d757b38aa080f92f54ca8bba94a2d066  /tmp/unified-packaging.patch.gz" | sha256sum -c -
@@ -37,8 +38,8 @@ jobs:
           git checkout -B agent/unified-packaging-entry-ready origin/main
           git apply --check /tmp/unified-packaging.patch
           git apply /tmp/unified-packaging.patch
-          git apply --check .agent-tools/unified-packaging-fix.patch
-          git apply .agent-tools/unified-packaging-fix.patch
+          git apply --check /tmp/unified-packaging-fix.patch
+          git apply /tmp/unified-packaging-fix.patch
 
           git add backend/inventory
           git commit -m "feat: unify packaging types and stock conversions"
