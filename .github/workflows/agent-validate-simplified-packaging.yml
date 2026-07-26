@@ -30,7 +30,7 @@ jobs:
           git config user.name "adminfpestoque"
           git config user.email "adminfpestoque@users.noreply.github.com"
           git fetch origin main
-          git checkout -B agent/simplify-category-product-packaging-ready origin/main
+          git checkout -B agent/simplify-category-product-packaging-final origin/main
           mkdir -p .agent-tools
           cp /tmp/simplify_packaging.py .agent-tools/simplify_packaging.py
           cp /tmp/update_simplified_packaging_tests.py .agent-tools/update_simplified_packaging_tests.py
@@ -100,4 +100,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git push origin agent/simplify-category-product-packaging-ready --force
+          git push origin agent/simplify-category-product-packaging-final --force
