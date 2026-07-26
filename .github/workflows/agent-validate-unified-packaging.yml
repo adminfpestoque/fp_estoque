@@ -37,6 +37,8 @@ jobs:
           git checkout -B agent/unified-packaging-entry-ready origin/main
           git apply --check /tmp/unified-packaging.patch
           git apply /tmp/unified-packaging.patch
+          git apply --check .agent-tools/unified-packaging-fix.patch
+          git apply .agent-tools/unified-packaging-fix.patch
 
           git add backend/inventory
           git commit -m "feat: unify packaging types and stock conversions"
