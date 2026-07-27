@@ -117,14 +117,14 @@ class DataGovernanceTests(TestCase):
         product.refresh_from_db()
         self.assertEqual(product.name, "Produto de governança")
 
-    def test_governance_records_cannot_be_deleted(self):
+    def test_unused_category_and_supplier_can_be_deleted(self):
         category_response = self.client.delete(f"/api/categories/{self.category.id}/")
         supplier_response = self.client.delete(f"/api/suppliers/{self.supplier.id}/")
 
-        self.assertEqual(category_response.status_code, 405, category_response.data)
-        self.assertEqual(supplier_response.status_code, 405, supplier_response.data)
-        self.assertTrue(Category.objects.filter(pk=self.category.pk).exists())
-        self.assertTrue(Supplier.objects.filter(pk=self.supplier.pk).exists())
+        self.assertEqual(category_response.status_code, 204)
+        self.assertEqual(supplier_response.status_code, 204)
+        self.assertFalse(Category.objects.filter(pk=self.category.pk).exists())
+        self.assertFalse(Supplier.objects.filter(pk=self.supplier.pk).exists())
 
     def test_governance_records_can_be_activated_and_deactivated(self):
         for endpoint, instance in (
