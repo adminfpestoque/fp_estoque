@@ -3,13 +3,13 @@ import django.db.models.deletion
 
 
 DEFAULT_PACKAGING = [
-    "LATA",
-    "GARRAFA",
-    "GARRAFA PET",
-    "GARRAFA LONG NECK",
-    "GARRAFA RETORNÁVEL",
-    "GARRAFA PIRIGUETE",
-    "PACOTE",
+    "Lata",
+    "Garrafa",
+    "Garrafa PET",
+    "Garrafa Long Neck",
+    "Garrafa Retornável",
+    "Garrafa Piriguete",
+    "Pacote",
 ]
 
 
