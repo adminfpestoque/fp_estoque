@@ -30,6 +30,55 @@ def packaging_queryset(self):
     return queryset
 
 
+def merge_packaging_kind(current, requested):
+    valid = {
+        PackagingType.CONTAINER,
+        PackagingType.GROUPING,
+        PackagingType.BOTH,
+    }
+    current = current if current in valid else PackagingType.GROUPING
+    requested = requested if requested in valid else PackagingType.GROUPING
+    if current == requested:
+        return current
+    if PackagingType.BOTH in {current, requested}:
+        return PackagingType.BOTH
+    return PackagingType.BOTH
+
+
+_original_packaging_create = PackagingTypeViewSet.create
+
+
+def create_packaging(self, request, *args, **kwargs):
+    name = " ".join(str(request.data.get("name") or "").strip().split())
+    existing = PackagingType.objects.filter(name__iexact=name).first() if name else None
+    if not existing:
+        return _original_packaging_create(self, request, *args, **kwargs)
+
+    requested_kind = str(
+        request.data.get("kind") or PackagingType.GROUPING
+    ).strip().upper()
+    merged_kind = merge_packaging_kind(existing.kind, requested_kind)
+    update_fields = []
+
+    if existing.kind != merged_kind:
+        existing.kind = merged_kind
+        update_fields.append("kind")
+    if not existing.active:
+        existing.active = True
+        update_fields.append("active")
+    if update_fields:
+        update_fields.append("updated_at")
+        existing.save(update_fields=update_fields)
+
+    audit(
+        request.user,
+        "REUSE",
+        existing,
+        f'Opção "{existing.name}" já existente foi reutilizada no cadastro.',
+    )
+    return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+
 def destroy_packaging(self, request, *args, **kwargs):
     packaging_type = self.get_object()
     product_count = packaging_type.products.count()
@@ -54,9 +103,14 @@ def destroy_packaging(self, request, *args, **kwargs):
 
 
 PackagingTypeViewSet.get_queryset = packaging_queryset
+PackagingTypeViewSet.create = create_packaging
 PackagingTypeViewSet.destroy = destroy_packaging
-if "kind" not in PackagingTypeViewSet.filterset_fields:
-    PackagingTypeViewSet.filterset_fields = [*PackagingTypeViewSet.filterset_fields, "kind"]
+# O parâmetro kind usa uma regra inclusiva: BOTH deve aparecer tanto em
+# Embalagem quanto em Tipo de empacotamento. Por isso ele não pode passar
+# novamente pelo filtro exato automático do django-filter.
+PackagingTypeViewSet.filterset_fields = [
+    field for field in PackagingTypeViewSet.filterset_fields if field != "kind"
+]
 
 _original_product_queryset = ProductViewSet.get_queryset
 
