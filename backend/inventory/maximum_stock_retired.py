@@ -6,8 +6,8 @@ def retire_product_maximum_stock(Product):
     """Remove o limite máximo do modelo em tempo de execução.
 
     A migração 0014 remove a coluna física do banco. A propriedade legada retorna
-    zero apenas para manter compatibilidade com trechos antigos enquanto relatórios
-    e integrações deixam de expor esse conceito.
+    zero e aceita valores antigos sem armazená-los, mantendo compatibilidade com
+    integrações e testes que ainda enviam esse campo.
     """
     try:
         field = Product._meta.get_field("maximum_stock")
@@ -19,7 +19,16 @@ def retire_product_maximum_stock(Product):
         if hasattr(Product, "maximum_stock"):
             delattr(Product, "maximum_stock")
 
-    Product.maximum_stock = property(lambda self: 0)
+    def get_retired_maximum_stock(self):
+        return 0
+
+    def set_retired_maximum_stock(self, value):
+        self.__dict__["_retired_maximum_stock"] = value
+
+    Product.maximum_stock = property(
+        get_retired_maximum_stock,
+        set_retired_maximum_stock,
+    )
     Product._meta.constraints = [
         constraint
         for constraint in Product._meta.constraints
