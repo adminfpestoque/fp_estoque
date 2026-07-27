@@ -30,7 +30,6 @@ const supplierInitial = {
   name: "",
   corporate_name: "",
   document: "",
-  state_registration: "",
   contact_name: "",
   phone: "",
   whatsapp: "",
@@ -41,11 +40,44 @@ const supplierInitial = {
   district: "",
   city: "",
   state: "",
-  notes: "",
   active: true,
 };
 
-function CityStateFields({ form, setForm }) {
+function formatCep(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+}
+
+function chooseBestCep(results, address, district) {
+  const targetAddress = normalizeLocationSearch(address);
+  const targetDistrict = normalizeLocationSearch(district);
+  return [...results]
+    .map((item) => {
+      const street = normalizeLocationSearch(item.logradouro);
+      const neighborhood = normalizeLocationSearch(item.bairro);
+      let score = 0;
+      if (street === targetAddress) score += 10;
+      else if (street.includes(targetAddress) || targetAddress.includes(street)) score += 6;
+      if (targetDistrict && neighborhood === targetDistrict) score += 4;
+      return { item, score };
+    })
+    .sort((a, b) => b.score - a.score)[0]?.item || null;
+}
+
+async function findCepByAddress({ state, city, address, district }) {
+  const uf = String(state || "").trim().toUpperCase();
+  const cityName = String(city || "").trim();
+  const street = String(address || "").trim();
+  if (!uf || cityName.length < 3 || street.length < 3) return null;
+
+  const url = `https://viacep.com.br/ws/${encodeURIComponent(uf)}/${encodeURIComponent(cityName)}/${encodeURIComponent(street)}/json/`;
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("Não foi possível consultar o CEP.");
+  const payload = await response.json();
+  return chooseBestCep(Array.isArray(payload) ? payload : [], street, district);
+}
+
+function CityStateFields({ form, setForm, onLocationChange }) {
   const [cities, setCities] = useState([]);
   const [loadingCities, setLoadingCities] = useState(true);
   const [citiesError, setCitiesError] = useState("");
@@ -78,7 +110,11 @@ function CityStateFields({ form, setForm }) {
   }, [cities, form.city, form.state]);
 
   function selectCity(city) {
-    setForm((current) => ({ ...current, city: city.name, state: city.state }));
+    setForm((current) => {
+      const next = { ...current, city: city.name, state: city.state, cep: "" };
+      window.setTimeout(() => onLocationChange?.(next), 0);
+      return next;
+    });
     setShowSuggestions(false);
   }
 
@@ -86,11 +122,16 @@ function CityStateFields({ form, setForm }) {
     const currentCity = cities.find(
       (city) => normalizeLocationSearch(city.name) === normalizeLocationSearch(form.city),
     );
-    setForm((current) => ({
-      ...current,
-      state,
-      city: currentCity && currentCity.state === state ? current.city : "",
-    }));
+    setForm((current) => {
+      const next = {
+        ...current,
+        state,
+        city: currentCity && currentCity.state === state ? current.city : "",
+        cep: "",
+      };
+      window.setTimeout(() => onLocationChange?.(next), 0);
+      return next;
+    });
     setShowSuggestions(true);
   }
 
@@ -101,6 +142,7 @@ function CityStateFields({ form, setForm }) {
       (city) => normalizeLocationSearch(city.name) === query && (!form.state || city.state === form.state),
     );
     if (exactMatches.length === 1) selectCity(exactMatches[0]);
+    else onLocationChange?.(form);
   }
 
   return (
@@ -123,7 +165,7 @@ function CityStateFields({ form, setForm }) {
             type="text"
             value={form.city || ""}
             onChange={(event) => {
-              setForm((current) => ({ ...current, city: event.target.value }));
+              setForm((current) => ({ ...current, city: event.target.value, cep: "" }));
               setShowSuggestions(true);
             }}
             onFocus={() => setShowSuggestions(true)}
@@ -168,30 +210,75 @@ export function SuppliersPage({ notify, me }) {
   const [form, setForm] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [cepLookup, setCepLookup] = useState({ loading: false, message: "" });
+
+  function openForm(value) {
+    setCepLookup({ loading: false, message: "" });
+    setForm(value);
+  }
+
+  async function resolveCep(candidate = form) {
+    if (!candidate) return candidate;
+    if (!candidate.state || String(candidate.city || "").trim().length < 3 || String(candidate.address || "").trim().length < 3) {
+      setCepLookup({
+        loading: false,
+        message: "Selecione a cidade e informe o endereço para buscar o CEP automaticamente.",
+      });
+      return candidate;
+    }
+
+    setCepLookup({ loading: true, message: "Buscando CEP pelo endereço..." });
+    try {
+      const result = await findCepByAddress(candidate);
+      if (!result?.cep) {
+        setCepLookup({
+          loading: false,
+          message: "CEP não localizado. Revise a cidade e o endereço; o preenchimento continua opcional.",
+        });
+        return candidate;
+      }
+
+      const next = {
+        ...candidate,
+        cep: formatCep(result.cep),
+        district: candidate.district || result.bairro || "",
+      };
+      setForm((current) => current ? { ...current, cep: next.cep, district: next.district } : current);
+      setCepLookup({ loading: false, message: `CEP localizado automaticamente: ${next.cep}.` });
+      return next;
+    } catch {
+      setCepLookup({
+        loading: false,
+        message: "Não foi possível consultar o CEP agora. O fornecedor pode ser salvo normalmente.",
+      });
+      return candidate;
+    }
+  }
 
   async function save(event) {
     event.preventDefault();
     try {
+      const resolvedForm = form.cep ? form : await resolveCep(form);
       const payload = {
-        name: form.name.trim(),
-        corporate_name: form.corporate_name || "",
-        document: form.document?.trim() || null,
-        state_registration: form.state_registration?.trim() || "",
-        contact_name: form.contact_name?.trim() || "",
-        phone: form.phone?.trim() || "",
-        whatsapp: form.whatsapp?.trim() || "",
-        email: form.email?.trim() || "",
-        cep: form.cep?.trim() || "",
-        address: form.address?.trim() || "",
-        address_number: form.address_number?.trim() || "",
-        district: form.district?.trim() || "",
-        city: form.city?.trim() || "",
-        state: form.state || "",
-        notes: form.notes?.trim() || "",
-        active: Boolean(form.active),
+        name: resolvedForm.name.trim(),
+        corporate_name: resolvedForm.corporate_name || "",
+        document: resolvedForm.document?.trim() || null,
+        state_registration: "",
+        contact_name: resolvedForm.contact_name?.trim() || "",
+        phone: resolvedForm.phone?.trim() || "",
+        whatsapp: resolvedForm.whatsapp?.trim() || "",
+        email: resolvedForm.email?.trim() || "",
+        cep: resolvedForm.cep?.trim() || "",
+        address: resolvedForm.address?.trim() || "",
+        address_number: resolvedForm.address_number?.trim() || "",
+        district: resolvedForm.district?.trim() || "",
+        city: resolvedForm.city?.trim() || "",
+        state: resolvedForm.state || "",
+        notes: "",
+        active: Boolean(resolvedForm.active),
       };
 
-      if (form.id) await api.patch(`suppliers/${form.id}/`, payload);
+      if (resolvedForm.id) await api.patch(`suppliers/${resolvedForm.id}/`, payload);
       else await api.post("suppliers/", payload);
       notify("Fornecedor salvo com sucesso.");
       setForm(null);
@@ -221,7 +308,7 @@ export function SuppliersPage({ notify, me }) {
     <>
       <PageHeader
         actions={me.permissions.is_admin && (
-          <Button icon={Plus} onClick={() => setForm({ ...supplierInitial })}>Novo fornecedor</Button>
+          <Button icon={Plus} onClick={() => openForm({ ...supplierInitial })}>Novo fornecedor</Button>
         )}
       />
 
@@ -266,7 +353,7 @@ export function SuppliersPage({ notify, me }) {
               label: "Ações",
               render: (row) => me.permissions.is_admin ? (
                 <div className="row-actions">
-                  <button onClick={() => setForm({ ...row })} title="Editar fornecedor" aria-label={`Editar ${row.name}`}><Pencil size={16} /></button>
+                  <button onClick={() => openForm({ ...row })} title="Editar fornecedor" aria-label={`Editar ${row.name}`}><Pencil size={16} /></button>
                   <button
                     className={row.active ? "warning" : "success"}
                     onClick={() => setPendingAction(row)}
@@ -296,9 +383,6 @@ export function SuppliersPage({ notify, me }) {
             <Field label="CNPJ ou CPF">
               <input value={form.document || ""} onChange={(event) => setForm({ ...form, document: event.target.value })} />
             </Field>
-            <Field label="Inscrição estadual">
-              <input value={form.state_registration || ""} onChange={(event) => setForm({ ...form, state_registration: event.target.value })} />
-            </Field>
             <Field label="Responsável">
               <input value={form.contact_name || ""} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} />
             </Field>
@@ -311,24 +395,33 @@ export function SuppliersPage({ notify, me }) {
             <Field label="E-mail do responsável">
               <input type="email" value={form.email || ""} onChange={(event) => setForm({ ...form, email: event.target.value })} />
             </Field>
-            <Field label="CEP">
-              <input value={form.cep || ""} onChange={(event) => setForm({ ...form, cep: event.target.value })} />
-            </Field>
-            <Field label="Endereço">
-              <input value={form.address || ""} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+            <Field label="Endereço" hint="Depois de informar cidade e endereço, o CEP será buscado automaticamente.">
+              <input
+                value={form.address || ""}
+                onChange={(event) => setForm({ ...form, address: event.target.value, cep: "" })}
+                onBlur={() => resolveCep(form)}
+              />
             </Field>
             <Field label="Número">
               <input value={form.address_number || ""} onChange={(event) => setForm({ ...form, address_number: event.target.value })} />
             </Field>
             <Field label="Bairro">
-              <input value={form.district || ""} onChange={(event) => setForm({ ...form, district: event.target.value })} />
+              <input
+                value={form.district || ""}
+                onChange={(event) => setForm({ ...form, district: event.target.value, cep: "" })}
+                onBlur={() => resolveCep(form)}
+              />
             </Field>
 
-            <CityStateFields form={form} setForm={setForm} />
+            <CityStateFields form={form} setForm={setForm} onLocationChange={resolveCep} />
 
-            <Field label="Observações">
-              <textarea value={form.notes || ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+            <Field
+              label="CEP automático"
+              hint={cepLookup.message || "Selecione a cidade e informe o endereço para buscar o CEP automaticamente."}
+            >
+              <input value={form.cep || ""} readOnly placeholder={cepLookup.loading ? "Buscando..." : "Preenchido automaticamente"} />
             </Field>
+
             <div className="form-actions full">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancelar</Button>
               <Button>Salvar fornecedor</Button>
