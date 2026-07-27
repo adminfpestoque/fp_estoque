@@ -50,6 +50,7 @@ function applyCreatorState(form, config) {
 
   const stateKey = `${config.key}CreatorOpen`;
   const isOpen = form.dataset[stateKey] === "true";
+  const buttonLabel = isOpen ? config.openLabel : `+ ${config.closedLabel}`;
 
   field.hidden = !isOpen;
   field.setAttribute("aria-hidden", isOpen ? "false" : "true");
@@ -57,8 +58,8 @@ function applyCreatorState(form, config) {
   action.style.gridColumn = isOpen ? "" : "2 / span 2";
   button.dataset.inlineCreator = config.key;
   button.dataset.creatorOpen = isOpen ? "true" : "false";
-  button.textContent = isOpen ? config.openLabel : `+ ${config.closedLabel}`;
-  if (label) label.textContent = config.fieldLabel;
+  if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
+  if (label && label.textContent !== config.fieldLabel) label.textContent = config.fieldLabel;
 }
 
 function prepareProductCreators() {
