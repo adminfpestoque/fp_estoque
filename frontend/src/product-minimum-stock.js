@@ -79,12 +79,12 @@ function refreshMinimumSection(form) {
   const packageMinimum = minimumUnits === 0
     ? 0
     : Math.ceil(minimumUnits / unitsPerPackage);
+  const label = `Estoque mínimo em ${typeName}`;
+  const hint = `1 ${typeName} equivale a ${unitsPerPackage} unidades. Ao alterar este campo, o mínimo em unidades será atualizado automaticamente.`;
 
-  packageLabel.textContent = `Estoque mínimo em ${typeName}`;
+  if (packageLabel.textContent !== label) packageLabel.textContent = label;
   packageInput.value = String(packageMinimum);
-  if (packageHint) {
-    packageHint.textContent = `1 ${typeName} equivale a ${unitsPerPackage} unidades. Ao alterar este campo, o mínimo em unidades será atualizado automaticamente.`;
-  }
+  if (packageHint && packageHint.textContent !== hint) packageHint.textContent = hint;
 }
 
 function buildMinimumSection(form) {
@@ -141,7 +141,7 @@ function prepareProductMinimumStock() {
     form.addEventListener("input", (event) => {
       const unitField = fieldByLabel(form, "Estoque mínimo em unidades");
       const unitInput = unitField?.querySelector("input");
-      const packageInput = section.querySelector("[data-minimum-package-field] input");
+      const packageInput = form.querySelector("[data-minimum-package-field] input");
       const unitsInput = fieldStartingWith(form, "Unidades contidas em cada")?.querySelector("input");
 
       if (event.target === packageInput) {
