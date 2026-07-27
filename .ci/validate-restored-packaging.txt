@@ -1,1 +1,0 @@
-Validação temporária da restauração de tipos de empacotamento.
