@@ -13,6 +13,7 @@ if not getattr(PackagingType, "_idempotent_names_installed", False):
             if existing:
                 self.pk = existing.pk
                 self.name = existing.name
+                self.kind = existing.kind
                 self.active = existing.active
                 if hasattr(existing, "created_at"):
                     self.created_at = existing.created_at
@@ -47,12 +48,19 @@ if not getattr(Product, "_simple_packaging_installed", False):
         changed_fields = set()
         if not self.packaging_id:
             default_packaging = (
-                PackagingType.objects.filter(name__iexact="Garrafa").first()
-                or PackagingType.objects.filter(active=True).order_by("name").first()
+                PackagingType.objects.filter(
+                    name__iexact="Garrafa",
+                    kind__in=[PackagingType.CONTAINER, PackagingType.BOTH],
+                ).first()
+                or PackagingType.objects.filter(
+                    active=True,
+                    kind__in=[PackagingType.CONTAINER, PackagingType.BOTH],
+                ).order_by("name").first()
             )
             if default_packaging is None:
                 default_packaging = PackagingType.objects.create(
                     name="Garrafa",
+                    kind=PackagingType.CONTAINER,
                     active=True,
                 )
             self.packaging = default_packaging
