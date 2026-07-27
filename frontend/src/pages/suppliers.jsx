@@ -22,7 +22,6 @@ import {
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
 import {
-  BRAZIL_STATES,
   loadBrazilCities,
   normalizeLocationSearch,
 } from "../brazilLocations.js";
@@ -78,7 +77,7 @@ async function findCepByAddress({ state, city, address, district }) {
   return chooseBestCep(Array.isArray(payload) ? payload : [], street, district);
 }
 
-function CityStateFields({ form, setForm, onLocationChange }) {
+function CityField({ form, setForm, onLocationChange }) {
   const [cities, setCities] = useState([]);
   const [loadingCities, setLoadingCities] = useState(true);
   const [citiesError, setCitiesError] = useState("");
@@ -105,10 +104,9 @@ function CityStateFields({ form, setForm, onLocationChange }) {
   const filteredCities = useMemo(() => {
     const query = normalizeLocationSearch(form.city);
     return cities
-      .filter((city) => !form.state || city.state === form.state)
       .filter((city) => !query || normalizeLocationSearch(city.name).includes(query))
       .slice(0, 30);
-  }, [cities, form.city, form.state]);
+  }, [cities, form.city]);
 
   function selectCity(city) {
     setForm((current) => {
@@ -119,90 +117,68 @@ function CityStateFields({ form, setForm, onLocationChange }) {
     setShowSuggestions(false);
   }
 
-  function changeState(state) {
-    const currentCity = cities.find(
-      (city) => normalizeLocationSearch(city.name) === normalizeLocationSearch(form.city),
-    );
-    setForm((current) => {
-      const next = {
-        ...current,
-        state,
-        city: currentCity && currentCity.state === state ? current.city : "",
-        cep: "",
-      };
-      window.setTimeout(() => onLocationChange?.(next), 0);
-      return next;
-    });
-    setShowSuggestions(true);
-  }
-
   function confirmTypedCity() {
     const query = normalizeLocationSearch(form.city);
     if (!query) return;
     const exactMatches = cities.filter(
-      (city) => normalizeLocationSearch(city.name) === query && (!form.state || city.state === form.state),
+      (city) => normalizeLocationSearch(city.name) === query,
     );
     if (exactMatches.length === 1) selectCity(exactMatches[0]);
-    else onLocationChange?.(form);
   }
 
   return (
-    <>
-      <Field label="Estado (UF)">
-        <select value={form.state || ""} onChange={(event) => changeState(event.target.value)}>
-          <option value="">Selecione ou escolha primeiro a cidade</option>
-          {BRAZIL_STATES.map(([code, name]) => (
-            <option key={code} value={code}>{code} — {name}</option>
-          ))}
-        </select>
-      </Field>
-
-      <Field
-        label="Cidade"
-        hint={loadingCities ? "Carregando cidades do Brasil..." : citiesError || "Digite para filtrar ou escolha uma cidade da lista."}
-      >
-        <div className="city-combobox">
-          <input
-            type="text"
-            value={form.city || ""}
-            onChange={(event) => {
-              setForm((current) => ({ ...current, city: event.target.value, cep: "" }));
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => {
-              window.setTimeout(() => {
-                confirmTypedCity();
-                setShowSuggestions(false);
-              }, 150);
-            }}
-            placeholder={form.state ? `Digite uma cidade de ${form.state}` : "Digite o nome da cidade"}
-            autoComplete="off"
-            role="combobox"
-            aria-expanded={showSuggestions}
-            aria-autocomplete="list"
-          />
-          {showSuggestions && !loadingCities && cities.length > 0 && (
-            <div className="city-suggestions" role="listbox">
-              {filteredCities.length ? filteredCities.map((city) => (
-                <button
-                  key={city.id}
-                  type="button"
-                  role="option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectCity(city)}
-                >
-                  <span>{city.name}</span>
-                  <strong>{city.state}</strong>
-                </button>
-              )) : (
-                <div className="city-suggestions-empty">Nenhuma cidade encontrada.</div>
-              )}
-            </div>
-          )}
-        </div>
-      </Field>
-    </>
+    <Field
+      label="Cidade"
+      hint={loadingCities
+        ? "Carregando cidades do Brasil..."
+        : citiesError || "Digite e selecione a cidade da lista; a UF será preenchida automaticamente."}
+    >
+      <div className="city-combobox">
+        <input
+          type="text"
+          value={form.city || ""}
+          onChange={(event) => {
+            setForm((current) => ({
+              ...current,
+              city: event.target.value,
+              state: "",
+              cep: "",
+            }));
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => {
+            window.setTimeout(() => {
+              confirmTypedCity();
+              setShowSuggestions(false);
+            }, 150);
+          }}
+          placeholder="Digite o nome da cidade"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={showSuggestions}
+          aria-autocomplete="list"
+        />
+        {showSuggestions && !loadingCities && cities.length > 0 && (
+          <div className="city-suggestions" role="listbox">
+            {filteredCities.length ? filteredCities.map((city) => (
+              <button
+                key={city.id}
+                type="button"
+                role="option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectCity(city)}
+              >
+                <span>{city.name}</span>
+                <strong>{city.state}</strong>
+              </button>
+            )) : (
+              <div className="city-suggestions-empty">Nenhuma cidade encontrada.</div>
+            )}
+          </div>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -439,7 +415,7 @@ export function SuppliersPage({ notify, me }) {
               />
             </Field>
 
-            <CityStateFields form={form} setForm={setForm} onLocationChange={resolveCep} />
+            <CityField form={form} setForm={setForm} onLocationChange={resolveCep} />
 
             <Field
               label="CEP automático"
