@@ -17,6 +17,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  Trash2,
 } from "../shared.jsx";
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
@@ -210,6 +211,8 @@ export function SuppliersPage({ notify, me }) {
   const [form, setForm] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [cepLookup, setCepLookup] = useState({ loading: false, message: "" });
 
   function openForm(value) {
@@ -304,6 +307,21 @@ export function SuppliersPage({ notify, me }) {
     }
   }
 
+  async function deleteSupplier() {
+    if (!pendingDelete) return;
+    setDeleteBusy(true);
+    try {
+      await api.delete(`suppliers/${pendingDelete.id}/`);
+      notify("Fornecedor apagado com sucesso.");
+      setPendingDelete(null);
+      list.reload();
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -361,6 +379,14 @@ export function SuppliersPage({ notify, me }) {
                     aria-label={`${row.active ? "Inativar" : "Ativar"} ${row.name}`}
                   >
                     {row.active ? <PowerOff size={16} /> : <Power size={16} />}
+                  </button>
+                  <button
+                    className="danger"
+                    onClick={() => setPendingDelete(row)}
+                    title="Apagar fornecedor"
+                    aria-label={`Apagar ${row.name}`}
+                  >
+                    <Trash2 size={16} />
                   </button>
                 </div>
               ) : "-",
@@ -442,6 +468,19 @@ export function SuppliersPage({ notify, me }) {
           busy={actionBusy}
           onClose={() => setPendingAction(null)}
           onConfirm={toggleStatus}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmModal
+          title="Apagar fornecedor"
+          message={`Deseja apagar permanentemente “${pendingDelete.name}”?`}
+          detail="A exclusão só será permitida quando o fornecedor não possuir produtos, entradas, lotes ou outros vínculos. Caso existam vínculos, utilize a opção de inativar."
+          confirmLabel="Apagar fornecedor"
+          confirmVariant="danger"
+          busy={deleteBusy}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={deleteSupplier}
         />
       )}
     </>
