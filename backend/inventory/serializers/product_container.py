@@ -15,6 +15,8 @@ if not getattr(ProductSerializer, "_simple_packaging_installed", False):
 
     def validate_with_packaging(self, attrs):
         attrs = _original_validate(self, attrs)
+        # O custo é definido exclusivamente pelas entradas de estoque.
+        attrs.pop("cost_price", None)
         packaging = attrs.get(
             "packaging",
             getattr(self.instance, "packaging", None),
@@ -41,6 +43,8 @@ if not getattr(ProductPackagingSerializer, "_grouping_kind_installed", False):
 
     def validate_grouping_type(self, attrs):
         attrs = _original_packaging_validate(self, attrs)
+        # O custo de caixa, fardo, grade ou pacote é informado em Nova entrada.
+        attrs.pop("cost_price", None)
         packaging_type = attrs.get(
             "packaging_type",
             getattr(self.instance, "packaging_type", None),
