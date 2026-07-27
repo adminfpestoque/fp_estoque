@@ -6,4 +6,6 @@ from ..maximum_stock_retired import retire_product_serializer
 
 retire_product_serializer(ProductSerializer)
 
+from . import product_container as _product_container  # noqa: E402,F401 — adiciona embalagem ao produto
+
 __all__ = [name for name in globals() if name.endswith("Serializer")]
