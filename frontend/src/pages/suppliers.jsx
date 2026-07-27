@@ -48,33 +48,30 @@ function formatCep(value) {
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
 }
 
-function chooseBestCep(results, address, district) {
-  const targetAddress = normalizeLocationSearch(address);
-  const targetDistrict = normalizeLocationSearch(district);
-  return [...results]
-    .map((item) => {
-      const street = normalizeLocationSearch(item.logradouro);
-      const neighborhood = normalizeLocationSearch(item.bairro);
-      let score = 0;
-      if (street === targetAddress) score += 10;
-      else if (street.includes(targetAddress) || targetAddress.includes(street)) score += 6;
-      if (targetDistrict && neighborhood === targetDistrict) score += 4;
-      return { item, score };
-    })
-    .sort((a, b) => b.score - a.score)[0]?.item || null;
-}
-
 async function findCepByAddress({ state, city, address, district }) {
   const uf = String(state || "").trim().toUpperCase();
   const cityName = String(city || "").trim();
   const street = String(address || "").trim();
   if (!uf || cityName.length < 3 || street.length < 3) return null;
 
-  const url = `https://viacep.com.br/ws/${encodeURIComponent(uf)}/${encodeURIComponent(cityName)}/${encodeURIComponent(street)}/json/`;
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error("Não foi possível consultar o CEP.");
-  const payload = await response.json();
-  return chooseBestCep(Array.isArray(payload) ? payload : [], street, district);
+  const response = await api.get("suppliers/lookup-cep/", {
+    params: {
+      state: uf,
+      city: cityName,
+      address: street,
+      district: String(district || "").trim(),
+    },
+  });
+  if (!response.data?.found) return null;
+
+  return {
+    cep: response.data.cep || "",
+    logradouro: response.data.address || street,
+    bairro: response.data.district || district || "",
+    localidade: response.data.city || cityName,
+    uf: response.data.state || uf,
+    complemento: response.data.complement || "",
+  };
 }
 
 function CityField({ form, setForm, onLocationChange }) {
@@ -212,7 +209,7 @@ export function SuppliersPage({ notify, me }) {
       if (!result?.cep) {
         setCepLookup({
           loading: false,
-          message: "CEP não localizado. Revise a cidade e o endereço; o preenchimento continua opcional.",
+          message: "CEP não localizado. Revise a cidade, o endereço e o bairro; o preenchimento continua opcional.",
         });
         return candidate;
       }
@@ -228,7 +225,7 @@ export function SuppliersPage({ notify, me }) {
     } catch {
       setCepLookup({
         loading: false,
-        message: "Não foi possível consultar o CEP agora. O fornecedor pode ser salvo normalmente.",
+        message: "Não foi possível consultar o CEP agora. Tente novamente após o backend concluir a atualização.",
       });
       return candidate;
     }
