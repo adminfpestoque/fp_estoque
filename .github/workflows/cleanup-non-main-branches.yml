@@ -1,0 +1,77 @@
+name: Cleanup non-main branches
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.repository == 'adminfpestoque/fp_estoque'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete every remote branch except main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init cleanup-repo
+          cd cleanup-repo
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+
+          mapfile -t branches < <(
+            git ls-remote --heads origin \
+              | awk '{print $2}' \
+              | sed 's#refs/heads/##' \
+              | sort
+          )
+
+          {
+            echo "Default branch kept: main"
+            echo "Branches found before cleanup: ${#branches[@]}"
+            echo
+            echo "Deleted branches:"
+          } > ../cleanup-report.txt
+
+          deleted=0
+          failed=0
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+
+            if git push origin --delete "$branch"; then
+              echo "$branch" >> ../cleanup-report.txt
+              deleted=$((deleted + 1))
+            else
+              echo "FAILED: $branch" >> ../cleanup-report.txt
+              failed=$((failed + 1))
+            fi
+          done
+
+          mapfile -t remaining < <(
+            git ls-remote --heads origin \
+              | awk '{print $2}' \
+              | sed 's#refs/heads/##' \
+              | sort
+          )
+
+          {
+            echo
+            echo "Deleted count: $deleted"
+            echo "Failed count: $failed"
+            echo "Remaining branches: ${#remaining[@]}"
+            printf '%s\n' "${remaining[@]}"
+          } >> ../cleanup-report.txt
+
+          test "$failed" -eq 0
+          test "${#remaining[@]}" -eq 1
+          test "${remaining[0]}" = "main"
+
+      - name: Upload cleanup report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-cleanup-report
+          path: cleanup-report.txt
