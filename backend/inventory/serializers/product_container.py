@@ -18,11 +18,7 @@ if not getattr(ProductSerializer, "_simple_packaging_installed", False):
             "packaging",
             getattr(self.instance, "packaging", None),
         )
-        if packaging is None:
-            raise serializers.ValidationError(
-                {"packaging": "Selecione a embalagem do produto."}
-            )
-        if not packaging.active:
+        if packaging is not None and not packaging.active:
             current_id = getattr(self.instance, "packaging_id", None)
             if not self.instance or current_id != packaging.pk:
                 raise serializers.ValidationError(
