@@ -7,6 +7,7 @@ import {
   fmtMoney,
   fmtQty,
   formatMoneyInput,
+  parseLocalizedNumber,
   getError,
   Button,
   ConfirmModal,
@@ -25,6 +26,18 @@ import {
 import { PageHeader } from "../layout.jsx";
 import { useList, SearchBar } from "./listing.jsx";
 
+const DEFAULT_UNITS_BY_TYPE = {
+  Caixa: 12,
+  Fardo: 6,
+  "Grade/engradado": 24,
+  Grade: 24,
+  Engradado: 24,
+  Pacote: 6,
+  Bandeja: 12,
+  Saco: 10,
+  Outra: 2,
+};
+
 const productInitial = {
   name: "",
   category: "",
@@ -37,6 +50,7 @@ const productInitial = {
   sale_price: "0,00",
   minimum_stock: "0",
   active: true,
+  package_config: null,
 };
 
 function productSubtitle(row) {
@@ -54,23 +68,31 @@ function sortedByName(rows) {
   return [...rows].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
+function defaultUnitsForType(name) {
+  return DEFAULT_UNITS_BY_TYPE[name] || 2;
+}
+
 export function ProductsPage({ notify, me }) {
   const list = useList("products/", { deleted: "all" });
   const [search, setSearch] = useState("");
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [packagingTypes, setPackagingTypes] = useState([]);
+  const [containerTypes, setContainerTypes] = useState([]);
+  const [groupingTypes, setGroupingTypes] = useState([]);
   const [newPackagingName, setNewPackagingName] = useState("");
+  const [newGroupingName, setNewGroupingName] = useState("");
   const [creatingPackaging, setCreatingPackaging] = useState(false);
+  const [creatingGrouping, setCreatingGrouping] = useState(false);
   const [form, setForm] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
 
   async function loadReferences() {
-    const [categoriesResult, suppliersResult, packagingResult] = await Promise.allSettled([
+    const [categoriesResult, suppliersResult, containersResult, groupingsResult] = await Promise.allSettled([
       api.get("categories/?page_size=200"),
       api.get("suppliers/?page_size=200"),
-      api.get("packaging-types/?page_size=500"),
+      api.get("packaging-types/?page_size=500&kind=CONTAINER"),
+      api.get("packaging-types/?page_size=500&kind=GROUPING"),
     ]);
 
     if (categoriesResult.status === "fulfilled") {
@@ -87,11 +109,18 @@ export function ProductsPage({ notify, me }) {
       notify(`Não foi possível carregar os fornecedores: ${getError(suppliersResult.reason)}`, "error");
     }
 
-    if (packagingResult.status === "fulfilled") {
-      setPackagingTypes(sortedByName(unwrap(packagingResult.value.data)));
+    if (containersResult.status === "fulfilled") {
+      setContainerTypes(sortedByName(unwrap(containersResult.value.data)));
     } else {
-      setPackagingTypes([]);
-      notify(`Não foi possível carregar as embalagens: ${getError(packagingResult.reason)}`, "error");
+      setContainerTypes([]);
+      notify(`Não foi possível carregar as embalagens: ${getError(containersResult.reason)}`, "error");
+    }
+
+    if (groupingsResult.status === "fulfilled") {
+      setGroupingTypes(sortedByName(unwrap(groupingsResult.value.data)));
+    } else {
+      setGroupingTypes([]);
+      notify(`Não foi possível carregar os tipos de empacotamento: ${getError(groupingsResult.reason)}`, "error");
     }
   }
 
@@ -101,12 +130,20 @@ export function ProductsPage({ notify, me }) {
 
   function openNewProduct() {
     setNewPackagingName("");
+    setNewGroupingName("");
     setForm({ ...productInitial });
   }
 
   function editProduct(row) {
     if (row.is_deleted) return;
+    const options = row.packaging_options || [];
+    const selectedGrouping = options.find((option) => option.active && option.is_default)
+      || options.find((option) => option.active)
+      || options[0]
+      || null;
+
     setNewPackagingName("");
+    setNewGroupingName("");
     setForm({
       id: row.id,
       name: row.name || "",
@@ -120,6 +157,14 @@ export function ProductsPage({ notify, me }) {
       sale_price: formatMoneyInput(row.sale_price),
       minimum_stock: String(row.minimum_stock ?? 0),
       active: Boolean(row.active),
+      package_config: selectedGrouping ? {
+        id: selectedGrouping.id,
+        packaging_type: String(selectedGrouping.packaging_type || ""),
+        packaging_type_name: selectedGrouping.packaging_type_name || selectedGrouping.name || "Embalagem",
+        units_per_package: String(selectedGrouping.units_per_package || 2),
+        cost_price: formatMoneyInput(selectedGrouping.cost_price ?? 0),
+        sale_price: formatMoneyInput(selectedGrouping.sale_price ?? 0),
+      } : null,
     });
   }
 
@@ -132,9 +177,13 @@ export function ProductsPage({ notify, me }) {
 
     setCreatingPackaging(true);
     try {
-      const response = await api.post("packaging-types/", { name, active: true });
+      const response = await api.post("packaging-types/", {
+        name,
+        kind: "CONTAINER",
+        active: true,
+      });
       const created = response.data;
-      setPackagingTypes((current) => sortedByName([
+      setContainerTypes((current) => sortedByName([
         ...current.filter((item) => item.id !== created.id),
         created,
       ]));
@@ -148,11 +197,92 @@ export function ProductsPage({ notify, me }) {
     }
   }
 
+  function chooseGroupingType(typeId) {
+    if (!typeId) {
+      setForm((current) => ({ ...current, package_config: null }));
+      return;
+    }
+
+    const type = groupingTypes.find((item) => String(item.id) === String(typeId));
+    setForm((current) => {
+      const sameType = String(current.package_config?.packaging_type || "") === String(typeId);
+      return {
+        ...current,
+        package_config: {
+          ...(sameType ? current.package_config : {}),
+          packaging_type: String(typeId),
+          packaging_type_name: type?.name || "Empacotamento",
+          units_per_package: sameType
+            ? current.package_config.units_per_package
+            : String(defaultUnitsForType(type?.name)),
+          cost_price: sameType ? current.package_config.cost_price : "0,00",
+          sale_price: sameType ? current.package_config.sale_price : "0,00",
+        },
+      };
+    });
+  }
+
+  function updateGrouping(key, value) {
+    setForm((current) => ({
+      ...current,
+      package_config: current.package_config
+        ? { ...current.package_config, [key]: value }
+        : null,
+    }));
+  }
+
+  async function createGroupingType() {
+    const name = newGroupingName.trim();
+    if (!name) {
+      notify("Digite o nome do novo tipo, como Caixa, Fardo ou Grade.", "error");
+      return;
+    }
+
+    setCreatingGrouping(true);
+    try {
+      const response = await api.post("packaging-types/", {
+        name,
+        kind: "GROUPING",
+        active: true,
+      });
+      const created = response.data;
+      setGroupingTypes((current) => sortedByName([
+        ...current.filter((item) => item.id !== created.id),
+        created,
+      ]));
+      setNewGroupingName("");
+      setForm((current) => ({
+        ...current,
+        package_config: {
+          packaging_type: String(created.id),
+          packaging_type_name: created.name,
+          units_per_package: String(defaultUnitsForType(created.name)),
+          cost_price: "0,00",
+          sale_price: "0,00",
+        },
+      }));
+      notify(`Tipo “${created.name}” criado e selecionado.`);
+    } catch (error) {
+      notify(getError(error), "error");
+    } finally {
+      setCreatingGrouping(false);
+    }
+  }
+
   async function save(event) {
     event.preventDefault();
+
     if (!form.packaging) {
       notify("Selecione a embalagem do produto.", "error");
       return;
+    }
+
+    if (form.package_config) {
+      const units = Math.trunc(parseLocalizedNumber(form.package_config.units_per_package));
+      if (units < 2) {
+        notify(`Informe quantas unidades existem em cada ${form.package_config.packaging_type_name}.`, "error");
+        return;
+      }
     }
 
     const payload = {
@@ -170,7 +300,15 @@ export function ProductsPage({ notify, me }) {
       sale_price: String(form.sale_price),
       minimum_stock: String(form.minimum_stock),
       active: Boolean(form.active),
-      packaging_options: [],
+      packaging_options: form.package_config ? [{
+        ...(form.package_config.id ? { id: Number(form.package_config.id) } : {}),
+        packaging_type: Number(form.package_config.packaging_type),
+        units_per_package: String(form.package_config.units_per_package),
+        cost_price: String(form.package_config.cost_price),
+        sale_price: String(form.package_config.sale_price),
+        is_default: true,
+        active: true,
+      }] : [],
     };
 
     try {
@@ -241,7 +379,10 @@ export function ProductsPage({ notify, me }) {
       return {
         title: "Produto protegido pelo histórico",
         message: pendingAction.message,
-        detail: [blockers ? `Vínculos encontrados: ${blockers}.` : "", pendingAction.canDeactivate ? "Você pode inativar o produto." : "O produto já está inativo."].filter(Boolean).join(" "),
+        detail: [
+          blockers ? `Vínculos encontrados: ${blockers}.` : "",
+          pendingAction.canDeactivate ? "Você pode inativar o produto." : "O produto já está inativo.",
+        ].filter(Boolean).join(" "),
         confirmLabel: pendingAction.canDeactivate ? "Inativar produto" : "Entendi",
         confirmVariant: pendingAction.canDeactivate ? "warning" : "secondary",
       };
@@ -250,7 +391,9 @@ export function ProductsPage({ notify, me }) {
     return {
       title: activate ? "Ativar produto" : "Inativar produto",
       message: `${activate ? "Ativar" : "Inativar"} “${row.name}”?`,
-      detail: activate ? "O produto voltará a ficar disponível." : "O produto ficará indisponível para novas operações.",
+      detail: activate
+        ? "O produto voltará a ficar disponível."
+        : "O produto ficará indisponível para novas operações.",
       confirmLabel: activate ? "Ativar produto" : "Inativar produto",
       confirmVariant: activate ? "success" : "warning",
     };
@@ -282,11 +425,13 @@ export function ProductsPage({ notify, me }) {
     list.setParams(next);
   }
 
+  const groupingName = form?.package_config?.packaging_type_name || "empacotamento";
+
   return (
     <>
       <PageHeader
         title="Produtos"
-        description="Cadastre cada produto com sua categoria, embalagem, preços e estoque mínimo."
+        description="Cadastre o produto, sua embalagem individual e, quando houver, o tipo de empacotamento usado na compra ou venda."
         actions={me.permissions.is_admin && <Button icon={Plus} onClick={openNewProduct}>Novo produto</Button>}
       />
 
@@ -305,7 +450,7 @@ export function ProductsPage({ notify, me }) {
         </select>
         <select value={list.params.packaging || ""} onChange={(event) => list.setParams({ ...list.params, packaging: event.target.value, page: 1 })}>
           <option value="">Todas as embalagens</option>
-          {packagingTypes.map((packaging) => <option key={packaging.id} value={packaging.id}>{packaging.name}</option>)}
+          {containerTypes.map((packaging) => <option key={packaging.id} value={packaging.id}>{packaging.name}</option>)}
         </select>
         <select value={productStatusFilter} onChange={(event) => changeProductStatus(event.target.value)}>
           <option value="">Todos os cadastros</option>
@@ -333,6 +478,7 @@ export function ProductsPage({ notify, me }) {
             },
             { key: "category_name", label: "Categoria" },
             { key: "packaging_name", label: "Embalagem", render: (row) => <strong>{row.packaging_name || row.package_type || "—"}</strong> },
+            { key: "package_description", label: "Tipo", render: (row) => row.packaging_options?.length ? row.package_description : "Somente unidade" },
             { key: "stock", label: "Estoque", render: (row) => <strong>{fmtQty(row.stock)} UN</strong> },
             { key: "minimum_stock", label: "Estoque mínimo", render: (row) => `${fmtQty(row.minimum_stock)} UN` },
             {
@@ -376,8 +522,8 @@ export function ProductsPage({ notify, me }) {
         <Modal title={form.id ? "Editar produto" : "Novo produto"} onClose={() => setForm(null)} size="xl">
           <form className="form-grid cols-3 product-form-simple" onSubmit={save}>
             <Field label="Nome do produto" required><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Coca-Cola" required /></Field>
-            <Field label="Categoria" required><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} required><option value="">Selecione a categoria</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Field>
-            <Field label="Fornecedor principal"><select value={form.supplier || ""} onChange={(event) => setForm({ ...form, supplier: event.target.value })}><option value="">Não informado</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
+            <Field label="Categoria" required><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} required><option value="">Selecione a categoria</option>{categories.map((category) => <option key={category.id} value={category.id} disabled={!category.active && Number(form.category) !== category.id}>{category.name}{category.active ? "" : " (inativa)"}</option>)}</select></Field>
+            <Field label="Fornecedor principal"><select value={form.supplier || ""} onChange={(event) => setForm({ ...form, supplier: event.target.value })}><option value="">Não informado</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id} disabled={!supplier.active && Number(form.supplier) !== supplier.id}>{supplier.name}{supplier.active ? "" : " (inativo)"}</option>)}</select></Field>
 
             <Field label="Marca"><input value={form.brand || ""} onChange={(event) => setForm({ ...form, brand: event.target.value })} placeholder="Opcional" /></Field>
             <Field label="Volume de uma unidade" required><input type="number" min="1" step="1" value={form.volume} onChange={(event) => setForm({ ...form, volume: event.target.value })} placeholder="Ex.: 350" required /></Field>
@@ -386,15 +532,15 @@ export function ProductsPage({ notify, me }) {
             <div className="simple-packaging-config full">
               <div className="section-heading compact-heading">
                 <div>
-                  <h3>Embalagem</h3>
-                  <p>Selecione a embalagem do produto ou cadastre uma nova opção.</p>
+                  <h3>Embalagem do produto</h3>
+                  <p>É a apresentação física da unidade, como lata, garrafa, garrafa PET ou long neck.</p>
                 </div>
               </div>
               <div className="simple-packaging-select-grid">
-                <Field label="Embalagem do produto" required>
+                <Field label="Embalagem" required>
                   <select value={form.packaging || ""} onChange={(event) => setForm({ ...form, packaging: event.target.value })} required>
                     <option value="">Selecione a embalagem</option>
-                    {packagingTypes.map((packaging) => <option key={packaging.id} value={packaging.id} disabled={!packaging.active && String(form.packaging) !== String(packaging.id)}>{packaging.name}{packaging.active ? "" : " (inativa)"}</option>)}
+                    {containerTypes.map((packaging) => <option key={packaging.id} value={packaging.id} disabled={!packaging.active && String(form.packaging) !== String(packaging.id)}>{packaging.name}{packaging.active ? "" : " (inativa)"}</option>)}
                   </select>
                 </Field>
                 <Field label="Adicionar nova embalagem"><input value={newPackagingName} onChange={(event) => setNewPackagingName(event.target.value)} placeholder="Ex.: GARRAFA DE VIDRO" /></Field>
@@ -402,9 +548,37 @@ export function ProductsPage({ notify, me }) {
               </div>
             </div>
 
-            <Field label="Preço de custo por unidade" required><input type="text" inputMode="decimal" value={form.cost_price} onChange={(event) => setForm({ ...form, cost_price: event.target.value })} onBlur={() => setForm((current) => ({ ...current, cost_price: formatMoneyInput(current.cost_price) }))} required /></Field>
-            <Field label="Preço de venda por unidade" required><input type="text" inputMode="decimal" value={form.sale_price} onChange={(event) => setForm({ ...form, sale_price: event.target.value })} onBlur={() => setForm((current) => ({ ...current, sale_price: formatMoneyInput(current.sale_price) }))} required /></Field>
+            <Field label="Preço de custo por unidade individual" required><input type="text" inputMode="decimal" value={form.cost_price} onChange={(event) => setForm({ ...form, cost_price: event.target.value })} onBlur={() => setForm((current) => ({ ...current, cost_price: formatMoneyInput(current.cost_price) }))} required /></Field>
+            <Field label="Preço de venda por unidade individual" required><input type="text" inputMode="decimal" value={form.sale_price} onChange={(event) => setForm({ ...form, sale_price: event.target.value })} onBlur={() => setForm((current) => ({ ...current, sale_price: formatMoneyInput(current.sale_price) }))} required /></Field>
             <Field label="Estoque mínimo em unidades" hint="O sistema avisará quando o saldo atingir ou ficar abaixo deste valor."><input type="number" min="0" step="1" value={form.minimum_stock} onChange={(event) => setForm({ ...form, minimum_stock: event.target.value })} /></Field>
+
+            <div className="simple-packaging-config full">
+              <div className="section-heading compact-heading">
+                <div>
+                  <h3>Tipo de embalagem ou empacotamento</h3>
+                  <p>Opcional. Informe se o produto também é comprado ou vendido em caixa, fardo, grade/engradado, pacote ou outro agrupamento.</p>
+                </div>
+              </div>
+              <div className="simple-packaging-select-grid">
+                <Field label="Tipo já cadastrado">
+                  <select value={form.package_config?.packaging_type || ""} onChange={(event) => chooseGroupingType(event.target.value)}>
+                    <option value="">Somente unidade individual</option>
+                    {groupingTypes.map((type) => <option key={type.id} value={type.id} disabled={!type.active && String(form.package_config?.packaging_type) !== String(type.id)}>{type.name}{type.active ? "" : " (inativo)"}</option>)}
+                  </select>
+                </Field>
+                <Field label="Cadastrar novo tipo"><input value={newGroupingName} onChange={(event) => setNewGroupingName(event.target.value)} placeholder="Ex.: Caixa, Fardo ou Grade" /></Field>
+                <div className="simple-packaging-create"><Button type="button" variant="secondary" icon={Plus} onClick={createGroupingType} disabled={creatingGrouping}>{creatingGrouping ? "Criando..." : "Criar e selecionar"}</Button></div>
+              </div>
+
+              {form.package_config ? (
+                <div className="simple-packaging-fields">
+                  <Field label={`Unidades contidas em cada ${groupingName}`} required><input type="number" min="2" step="1" value={form.package_config.units_per_package} onChange={(event) => updateGrouping("units_per_package", event.target.value)} required /></Field>
+                  <Field label={`Preço de custo por ${groupingName}`} required><input type="text" inputMode="decimal" value={form.package_config.cost_price} onChange={(event) => updateGrouping("cost_price", event.target.value)} onBlur={() => updateGrouping("cost_price", formatMoneyInput(form.package_config.cost_price))} required /></Field>
+                  <Field label={`Preço de venda por ${groupingName}`} required><input type="text" inputMode="decimal" value={form.package_config.sale_price} onChange={(event) => updateGrouping("sale_price", event.target.value)} onBlur={() => updateGrouping("sale_price", formatMoneyInput(form.package_config.sale_price))} required /></Field>
+                  <div className="simple-packaging-preview"><strong>1 {groupingName}</strong><span>= {fmtQty(form.package_config.units_per_package)} unidades individuais</span></div>
+                </div>
+              ) : <div className="simple-packaging-empty">Este produto será movimentado somente por unidade individual. Selecione um tipo para informar a quantidade e os preços da caixa, fardo, grade ou pacote.</div>}
+            </div>
 
             <label className="checkbox-line product-active-check"><input type="checkbox" checked={form.active !== false} onChange={(event) => setForm({ ...form, active: event.target.checked })} /><span>Produto disponível para novas operações</span></label>
             <div />
