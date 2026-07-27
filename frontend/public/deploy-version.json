@@ -1,0 +1,7 @@
+{
+  "application": "FP Estoque",
+  "source_branch": "main",
+  "includes_commits_through": "971dbd22b223c6c79fd44ca7d703862769e0a7bb",
+  "reason": "Publicacao completa apos redeploy de uma versao antiga",
+  "generated_at": "2026-07-27T23:30:00-03:00"
+}
