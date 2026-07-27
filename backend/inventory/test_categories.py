@@ -57,7 +57,7 @@ class CategoryTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("name", response.data)
 
-    def test_delete_category_is_blocked_to_preserve_governance(self):
+    def test_category_without_products_can_be_deleted(self):
         category = Category.objects.create(
             name="Descartáveis",
             description="Produtos descartáveis",
@@ -65,8 +65,8 @@ class CategoryTest(TestCase):
 
         response = self.client.delete(f"/api/categories/{category.id}/")
 
-        self.assertEqual(response.status_code, 405)
-        self.assertTrue(Category.objects.filter(id=category.id, active=True).exists())
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Category.objects.filter(id=category.id).exists())
 
     def test_category_list_is_sorted_by_name(self):
         Category.objects.create(name="Zebra")
