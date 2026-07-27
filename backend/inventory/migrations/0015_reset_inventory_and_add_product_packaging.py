@@ -62,13 +62,4 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.RunPython(reset_inventory_database, noop_reverse),
-        migrations.AlterField(
-            model_name="product",
-            name="packaging",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT,
-                related_name="products",
-                to="inventory.packagingtype",
-            ),
-        ),
     ]
