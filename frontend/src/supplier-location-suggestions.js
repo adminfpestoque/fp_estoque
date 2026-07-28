@@ -44,20 +44,18 @@ function installStyles() {
   const style = document.createElement("style");
   style.id = "supplier-location-suggestions-style";
   style.textContent = `
-    .supplier-location-field { position: relative; }
+    .supplier-location-field { position: relative; align-content: start; }
     .supplier-location-menu {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: calc(100% + 6px);
-      z-index: 10050;
+      position: static;
       display: none;
+      width: 100%;
       max-height: 240px;
       overflow-y: auto;
+      margin-top: 2px;
       border: 1px solid var(--border, #374151);
       border-radius: 10px;
       background: var(--panel, #17191d);
-      box-shadow: 0 14px 35px rgba(0, 0, 0, .42);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, .25);
       padding: 6px;
     }
     .supplier-location-menu.is-open { display: block; }
@@ -88,6 +86,12 @@ function installStyles() {
       line-height: 1.35;
       opacity: .76;
     }
+    .supplier-location-attribution {
+      padding: 7px 11px 5px;
+      border-top: 1px solid var(--border, #374151);
+      font-size: 10px;
+      opacity: .62;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -100,7 +104,9 @@ function ensureMenu(field, mode) {
     menu.className = "supplier-location-menu";
     menu.dataset.mode = mode;
     menu.setAttribute("role", "listbox");
-    field.appendChild(menu);
+    const hint = field.querySelector(":scope > small");
+    if (hint) field.insertBefore(menu, hint);
+    else field.appendChild(menu);
   }
   return menu;
 }
@@ -142,19 +148,32 @@ async function resolveCity(form) {
   if (!cityName) return null;
 
   const storedUf = String(form.dataset.supplierSelectedUf || "").trim().toUpperCase();
-  if (storedUf.length === 2) return { city: cityName, state: storedUf };
 
   try {
     const cities = await cityList();
-    const matches = cities.filter(
-      (item) => normalizeLocationSearch(item.name) === normalizeLocationSearch(cityName),
+    const matches = cities.filter((item) =>
+      normalizeLocationSearch(item.name) === normalizeLocationSearch(cityName)
+      && (!storedUf || item.state === storedUf),
     );
     if (matches.length === 1) {
       form.dataset.supplierSelectedUf = matches[0].state;
-      return { city: matches[0].name, state: matches[0].state };
+      form.dataset.supplierSelectedCityId = String(matches[0].id || "");
+      return {
+        city: matches[0].name,
+        state: matches[0].state,
+        id: matches[0].id,
+      };
     }
   } catch {
-    return null;
+    if (storedUf.length !== 2) return null;
+  }
+
+  if (storedUf.length === 2) {
+    return {
+      city: cityName,
+      state: storedUf,
+      id: form.dataset.supplierSelectedCityId || "",
+    };
   }
   return null;
 }
@@ -196,7 +215,7 @@ function uniqueResults(results, mode) {
   });
 }
 
-function renderResults(form, input, mode, results) {
+function renderResults(form, input, mode, results, attribution = "") {
   const menu = menuForInput(input);
   if (!menu) return;
 
@@ -252,7 +271,15 @@ function renderResults(form, input, mode, results) {
     return button;
   });
 
-  menu.replaceChildren(...buttons);
+  const children = [...buttons];
+  if (attribution) {
+    const source = document.createElement("div");
+    source.className = "supplier-location-attribution";
+    source.textContent = attribution;
+    children.push(source);
+  }
+
+  menu.replaceChildren(...children);
   menu.classList.add("is-open");
 }
 
@@ -280,6 +307,7 @@ async function searchSuggestions(form, input, mode) {
       params: {
         state: location.state,
         city: location.city,
+        city_id: location.id || undefined,
         q: query,
       },
     });
@@ -288,7 +316,7 @@ async function searchSuggestions(form, input, mode) {
     if (String(input.value || "").trim() !== query) return;
 
     const results = Array.isArray(response.data?.results) ? response.data.results : [];
-    renderResults(form, input, mode, results);
+    renderResults(form, input, mode, results, response.data?.attribution || "");
   } catch (error) {
     if (requestTokens.get(input) !== token) return;
     const status = error?.response?.status;
@@ -303,7 +331,7 @@ async function searchSuggestions(form, input, mode) {
 
 function scheduleSearch(form, input, mode) {
   window.clearTimeout(searchTimers.get(input));
-  const timer = window.setTimeout(() => searchSuggestions(form, input, mode), 350);
+  const timer = window.setTimeout(() => searchSuggestions(form, input, mode), 500);
   searchTimers.set(input, timer);
 }
 
@@ -313,6 +341,7 @@ async function handleCityChange(form) {
 
   if (form.dataset.lastSupplierCity !== currentCity) {
     form.dataset.supplierSelectedUf = "";
+    form.dataset.supplierSelectedCityId = "";
     closeAllMenus(form);
   }
 
