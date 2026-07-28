@@ -34,7 +34,7 @@ const menuItems = [
   ["lots", Boxes, "Lotes e validade", null, "Quantidades disponíveis por lote com alertas de vencimento e regra FEFO."],
   ["adjustments", SlidersHorizontal, "Ajustes", "admin", "Correções autorizadas com justificativa obrigatória e histórico auditável."],
   ["inventories", ClipboardCheck, "Inventários", null, "Conte os produtos, identifique sobras e faltas e gere os ajustes com rastreabilidade."],
-  ["alerts", AlertTriangle, "Alertas", null, "Estoque mínimo, falta de produtos, validade e divergências."],
+  ["alerts", AlertTriangle, "Alertas", null, "Estoque mínimo, falta de produtos, validade, contas a prazo e divergências."],
   ["notifications", Bell, "Notificações", null, "Acompanhe avisos novos e o histórico de notificações."],
   ["reports", FileText, "Relatórios", null, "Consulte o histórico e gere relatórios em PDF ou planilha (XLSX)."],
   ["users", Users, "Usuários", "admin", "Cadastre usuários e defina diretamente o perfil de acesso de cada pessoa."],
@@ -51,6 +51,7 @@ export function Shell({
   unreadNotifications = 0,
   onRefreshNotifications,
   onMarkNotificationRead,
+  onOpenNotification,
   onMarkAllNotificationsRead,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -65,12 +66,21 @@ export function Shell({
     setShowNotifications(false);
   }
 
+  async function openNotification(notification) {
+    setShowNotifications(false);
+    if (onOpenNotification) {
+      await onOpenNotification(notification);
+      return;
+    }
+    await onMarkNotificationRead?.(notification);
+  }
+
   return (
     <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-top">
           <Logo compact={collapsed} />
-          <button className="icon-btn sidebar-collapse" onClick={() => setCollapsed(!collapsed)}><Menu size={20} /></button>
+          <button className="icon-btn sidebar-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expandir menu" : "Recolher menu"}><Menu size={20} /></button>
         </div>
         <nav>
           {visibleItems.map(([id, Icon, label]) => (
@@ -84,14 +94,19 @@ export function Shell({
       {mobileOpen && <div className="mobile-overlay" onClick={() => setMobileOpen(false)} />}
       <main className="content">
         <header className="topbar">
-          <button className="icon-btn mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={22} /></button>
+          <button className="icon-btn mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu size={22} /></button>
           <div className="topbar-title">
             <h1>{currentPage?.[2] || "FP Estoque"}</h1>
             {currentPage?.[4] && <small>{currentPage[4]}</small>}
           </div>
           <div className="topbar-actions">
             <div className="notification-wrap">
-              <button className="icon-btn bell" onClick={() => setShowNotifications(!showNotifications)} aria-label="Abrir notificações">
+              <button
+                className="icon-btn bell"
+                onClick={() => setShowNotifications(!showNotifications)}
+                aria-label="Abrir notificações"
+                aria-expanded={showNotifications}
+              >
                 <Bell size={20} />
                 {unreadNotifications > 0 && <span>{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
               </button>
@@ -101,9 +116,9 @@ export function Shell({
                     <strong>Notificações</strong>
                     <div className="popover-actions">
                       {unreadNotifications > 0 && (
-                        <button onClick={onMarkAllNotificationsRead} title="Marcar todas como lidas"><Check size={15} /></button>
+                        <button onClick={onMarkAllNotificationsRead} title="Marcar todas como lidas" aria-label="Marcar todas as notificações como lidas"><Check size={15} /></button>
                       )}
-                      <button onClick={onRefreshNotifications} title="Atualizar"><RefreshCw size={15} /></button>
+                      <button onClick={onRefreshNotifications} title="Atualizar" aria-label="Atualizar notificações"><RefreshCw size={15} /></button>
                     </div>
                   </div>
                   {notifications?.length ? notifications.map((notification) => (
@@ -111,11 +126,14 @@ export function Shell({
                       type="button"
                       key={notification.id}
                       className={`notification-item ${notification.read ? "read" : "unread"}`}
-                      onClick={() => onMarkNotificationRead?.(notification)}
+                      onClick={() => openNotification(notification)}
+                      title="Abrir o registro relacionado"
                     >
                       <StatusBadge value={notification.level} label={notification.title} />
                       <p>{notification.message}</p>
-                      <small>{fmtDate(notification.created_at)}</small>
+                      <small>
+                        {notification.reference_display || "Sistema"} • {fmtDate(notification.created_at)}
+                      </small>
                     </button>
                   )) : <p className="muted padded">Nenhuma notificação.</p>}
                   <button className="notification-see-all" onClick={() => navigate("notifications")}>Ver todas as notificações</button>
