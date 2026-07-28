@@ -1,0 +1,1 @@
+Terceira validação temporária após preservar as rotas e o estado de leitura das notificações.
