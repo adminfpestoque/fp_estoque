@@ -1,0 +1,1 @@
+Execução temporária do CI para validar a recuperação do backend na Render.
