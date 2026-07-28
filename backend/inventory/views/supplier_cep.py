@@ -3,11 +3,16 @@ import unicodedata
 from urllib.parse import quote
 
 import requests
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .catalog import SupplierViewSet
+
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OSM_ATTRIBUTION = "Dados de ruas: © OpenStreetMap contributors"
 
 
 def normalize(value):
@@ -125,6 +130,67 @@ def query_viacep(state, city, street):
     return payload if isinstance(payload, list) else []
 
 
+def query_city_map(city_id):
+    city_code = re.sub(r"\D", "", str(city_id or ""))
+    if not city_code:
+        return {"streets": [], "districts": []}
+
+    cache_key = f"supplier-city-map-v2:{city_code}"
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
+    query = f"""
+[out:json][timeout:25];
+(
+  rel[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"IBGE:GEOCODIGO\"=\"{city_code}\"];
+  rel[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"ref:IBGE\"=\"{city_code}\"];
+)->.city_relation;
+.city_relation map_to_area -> .city_area;
+(
+  way(area.city_area)[\"highway\"][\"name\"];
+  nwr(area.city_area)[\"place\"~\"^(suburb|neighbourhood|quarter)$\"][\"name\"];
+);
+out tags;
+""".strip()
+
+    response = requests.post(
+        OVERPASS_URL,
+        data={"data": query},
+        timeout=30,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "FP-Estoque/1.0 (city street suggestions)",
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    streets = []
+    districts = []
+    excluded_highways = {"footway", "path", "cycleway", "steps", "bridleway"}
+
+    for element in payload.get("elements", []):
+        tags = element.get("tags") or {}
+        name = " ".join(str(tags.get("name") or "").strip().split())
+        if not name:
+            continue
+
+        highway = str(tags.get("highway") or "").strip()
+        place = str(tags.get("place") or "").strip()
+        if highway and highway not in excluded_highways:
+            streets.append(name)
+        if place in {"suburb", "neighbourhood", "quarter"}:
+            districts.append(name)
+
+    catalog = {
+        "streets": unique(streets),
+        "districts": unique(districts),
+    }
+    cache.set(cache_key, catalog, 7 * 24 * 60 * 60 if catalog["streets"] else 60 * 60)
+    return catalog
+
+
 def compact_suggestions(items):
     suggestions = []
     seen = set()
@@ -144,6 +210,7 @@ def compact_suggestions(items):
                 "district": district,
                 "cep": cep,
                 "complement": str(item.get("complemento") or "").strip(),
+                "source": str(item.get("source") or "viacep"),
             }
         )
         if len(suggestions) >= 30:
@@ -151,10 +218,38 @@ def compact_suggestions(items):
     return suggestions
 
 
+def saved_supplier_suggestions(viewset, state, city, query):
+    target = normalize(query)
+    try:
+        rows = viewset.get_queryset().filter(
+            state__iexact=state,
+            city__iexact=city,
+        ).values("address", "district", "cep")[:100]
+    except Exception:
+        return []
+
+    results = []
+    for row in rows:
+        address = str(row.get("address") or "").strip()
+        district = str(row.get("district") or "").strip()
+        if target not in normalize(address) and target not in normalize(district):
+            continue
+        results.append(
+            {
+                "logradouro": address,
+                "bairro": district,
+                "cep": row.get("cep") or "",
+                "source": "saved",
+            }
+        )
+    return results
+
+
 @action(detail=False, methods=["get"], url_path="address-suggestions")
 def address_suggestions(self, request):
     state = str(request.query_params.get("state") or "").strip().upper()
     city = str(request.query_params.get("city") or "").strip()
+    city_id = str(request.query_params.get("city_id") or "").strip()
     query = " ".join(str(request.query_params.get("q") or "").strip().split())
 
     if len(state) != 2 or len(city) < 3:
@@ -169,18 +264,61 @@ def address_suggestions(self, request):
     if len(query) < 3:
         return Response({"results": []})
 
-    try:
-        results = query_viacep(state, city, query)
-    except (requests.RequestException, ValueError):
-        return Response(
-            {
-                "detail": "Não foi possível consultar os endereços agora.",
-                "results": [],
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
+    raw_results = []
+    errors = []
 
-    return Response({"results": compact_suggestions(results)})
+    try:
+        raw_results.extend(query_viacep(state, city, query))
+    except (requests.RequestException, ValueError) as error:
+        errors.append(str(error))
+
+    raw_results.extend(saved_supplier_suggestions(self, state, city, query))
+
+    uses_openstreetmap = False
+    if city_id:
+        try:
+            catalog = query_city_map(city_id)
+            target = normalize(query)
+            matching_streets = [name for name in catalog["streets"] if target in normalize(name)]
+            matching_districts = [name for name in catalog["districts"] if target in normalize(name)]
+
+            if matching_streets or matching_districts:
+                uses_openstreetmap = True
+
+            raw_results.extend(
+                {
+                    "logradouro": name,
+                    "bairro": "",
+                    "cep": "",
+                    "source": "openstreetmap",
+                }
+                for name in matching_streets
+            )
+            raw_results.extend(
+                {
+                    "logradouro": "",
+                    "bairro": name,
+                    "cep": "",
+                    "source": "openstreetmap",
+                }
+                for name in matching_districts
+            )
+        except (requests.RequestException, ValueError) as error:
+            errors.append(str(error))
+
+    results = compact_suggestions(raw_results)
+    return Response(
+        {
+            "results": results,
+            "attribution": OSM_ATTRIBUTION if uses_openstreetmap else "",
+            "detail": (
+                "Nenhuma rua ou bairro foi encontrado nas bases consultadas."
+                if not results
+                else ""
+            ),
+            "service_unavailable": bool(errors) and not results,
+        }
+    )
 
 
 @action(detail=False, methods=["get"], url_path="lookup-cep")
