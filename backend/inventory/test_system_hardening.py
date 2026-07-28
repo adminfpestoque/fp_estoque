@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -80,6 +81,60 @@ class SystemHardeningTests(APITestCase):
         output.recalculate_total()
         output.refresh_from_db()
         return output
+
+    def _credit_api_payload(self):
+        return {
+            "output_date": timezone.now().isoformat(),
+            "reason": "COMMERCIAL",
+            "customer_name": "Linkon",
+            "payment_method": StockOutput.PAYMENT_ON_ACCOUNT,
+            "amount_received": "0,00",
+            "payment_reference": "",
+            "payment_due_date": (
+                timezone.localdate() + timedelta(days=1)
+            ).isoformat(),
+            "notes": "",
+            "items": [
+                {
+                    "product": self.product.pk,
+                    "packaging": None,
+                    "sale_quantity": "2",
+                    "lot": None,
+                    "notes": "",
+                }
+            ],
+        }
+
+    def test_credit_output_api_saves_pending_draft(self):
+        response = self.client.post(
+            "/api/outputs/",
+            self._credit_api_payload(),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        output = StockOutput.objects.get(pk=response.data["id"])
+        self.assertEqual(output.status, StockOutput.DRAFT)
+        self.assertEqual(output.payment_method, StockOutput.PAYMENT_ON_ACCOUNT)
+        self.assertEqual(output.customer_name, "Linkon")
+        self.assertEqual(output.amount_received, Decimal("0.00"))
+        self.assertEqual(output.items.get().quantity, Decimal("2.000"))
+
+    def test_credit_output_creation_survives_alert_subsystem_failure(self):
+        with patch(
+            "inventory.safe_hooks.refresh_alerts",
+            side_effect=RuntimeError("falha simulada no subsistema de alertas"),
+        ):
+            response = self.client.post(
+                "/api/outputs/",
+                self._credit_api_payload(),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        output = StockOutput.objects.get(pk=response.data["id"])
+        self.assertEqual(output.status, StockOutput.DRAFT)
+        self.assertEqual(output.amount_received, Decimal("0.00"))
 
     def test_refresh_alerts_is_idempotent_for_alerts_and_notifications(self):
         self.product.stock = 0
