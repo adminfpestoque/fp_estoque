@@ -10,6 +10,7 @@ from .inventories import InventoryViewSet
 from .misc import forgot_password, report_catalog, report_export, report_preview, reset_password, upload_product_image
 from .reporting import report_xlsx_export
 from . import consistency as _consistency  # noqa: F401 — reforça notificações, estornos e relações operacionais
+from . import base_safety as _base_safety  # noqa: F401 — protege auditoria base e relações dos alertas
 
 __all__ = [
     name
