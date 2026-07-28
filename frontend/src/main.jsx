@@ -19,6 +19,7 @@ import { SettingsPage } from "./pages/settings.jsx";
 import { installReferenceFallbacks } from "./api-fallback.js";
 import { installCreditSaleEnhancements } from "./output-credit.js";
 import { installCreditPaymentWorkflow } from "./output-credit-workflow.js";
+import { installOutputPaymentStatusConsistency } from "./output-payment-status-consistency.js";
 import { installEntryProductColumn } from "./entry-products.js";
 import { installMaximumStockRemoval } from "./remove-maximum-stock.js";
 import { installProductCostEntryOnly } from "./product-cost-entry-only.js";
@@ -38,7 +39,7 @@ import {
 } from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.28-render-migration-recovery",
+  version: "2026.07.28-final-consistency",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
@@ -49,11 +50,13 @@ window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
     "entry-output-interface-refinements",
     "credit-due-date-and-payment-status",
     "credit-sale-pending-until-paid",
+    "credit-cancelled-payment-status",
     "output-items-by-sale-unit",
     "credit-due-and-overdue-alerts",
     "notification-deduplication-and-navigation",
     "notification-immediate-refresh",
     "notification-failure-backoff",
+    "session-recovery-without-forced-logout",
     "entry-cancellation-cost-consistency",
     "render-startup-migrations",
   ],
@@ -63,13 +66,14 @@ document.documentElement.dataset.fpRelease = window.__FP_ESTOQUE_RELEASE__.versi
 installReferenceFallbacks(api);
 installCreditSaleEnhancements(api);
 installCreditPaymentWorkflow(api);
+installOutputPaymentStatusConsistency(api);
 installEntryProductColumn(api);
 installMaximumStockRemoval(api);
 installProductCostEntryOnly(api);
 installProductMinimumStock();
 installProductInlineCreate();
 installSelectOptionCleanup();
-installNotificationSync(api);
+installNotificationSync();
 installSupplierTableFormat();
 installSupplierContactCleanup(api);
 installSupplierRequiredLabelBridge();
@@ -97,33 +101,52 @@ function notificationDestination(notification) {
 function App() {
   const [logged, setLogged] = useState(Boolean(localStorage.getItem("fp_access")));
   const [me, setMe] = useState(null);
+  const [sessionError, setSessionError] = useState("");
   const [page, setPage] = useState("dashboard");
   const [toast, setToast] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const notificationRequestRef = useRef(null);
   const notificationRetryAfterRef = useRef(0);
+  const meRetryTimerRef = useRef(null);
   const notify = (message, type = "success") => setToast({ message, type });
 
   function clearSession() {
+    window.clearTimeout(meRetryTimerRef.current);
     localStorage.removeItem("fp_access");
     localStorage.removeItem("fp_refresh");
     notificationRequestRef.current = null;
     notificationRetryAfterRef.current = 0;
+    meRetryTimerRef.current = null;
     setLogged(false);
     setMe(null);
+    setSessionError("");
     setNotifications([]);
     setUnreadNotifications(0);
   }
 
   async function loadMe() {
+    window.clearTimeout(meRetryTimerRef.current);
     try {
       const response = await api.get("users/me/");
       const preferences = normalizePreferences(response.data.profile || {});
       applyAndStorePreferences(preferences);
       setMe(response.data);
-    } catch {
-      clearSession();
+      setSessionError("");
+      loadNotifications().catch(() => {});
+      return true;
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        clearSession();
+        return false;
+      }
+
+      setSessionError("Não foi possível conectar ao servidor agora. A sessão foi preservada e uma nova tentativa será feita automaticamente.");
+      meRetryTimerRef.current = window.setTimeout(() => {
+        loadMe().catch(() => {});
+      }, 15_000);
+      return false;
     }
   }
 
@@ -139,7 +162,7 @@ function App() {
         return response.data;
       })
       .catch((error) => {
-        if (error?.response?.status === 401) {
+        if ([401, 403].includes(error?.response?.status)) {
           clearSession();
         } else {
           // Durante reinício/deploy do backend, evita dezenas de chamadas iguais.
@@ -157,8 +180,7 @@ function App() {
 
   useEffect(() => {
     if (!logged) return undefined;
-    loadMe();
-    loadNotifications().catch(() => {});
+    loadMe().catch(() => {});
     const timer = window.setInterval(() => {
       loadNotifications().catch(() => {});
     }, 60_000);
@@ -168,6 +190,7 @@ function App() {
     window.addEventListener("fp:notifications-changed", handleNotificationsChanged);
     return () => {
       window.clearInterval(timer);
+      window.clearTimeout(meRetryTimerRef.current);
       window.removeEventListener("fp:notifications-changed", handleNotificationsChanged);
     };
   }, [logged]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -199,7 +222,20 @@ function App() {
   }
 
   if (!logged) return <Login onLogin={() => setLogged(true)} />;
-  if (!me) return <div className="app-loading"><Logo /><RefreshCw className="spin" /> Carregando sistema...</div>;
+  if (!me) {
+    return (
+      <div className="app-loading">
+        <Logo />
+        {!sessionError && <RefreshCw className="spin" />}
+        <span>{sessionError || "Carregando sistema..."}</span>
+        {sessionError && (
+          <button type="button" onClick={() => loadMe().catch(() => {})}>
+            Tentar novamente
+          </button>
+        )}
+      </div>
+    );
+  }
 
   const pages = {
     dashboard: <DashboardPage />,
