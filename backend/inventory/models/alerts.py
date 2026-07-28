@@ -119,6 +119,22 @@ class Notification(TimeStamped):
     read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        from django.utils import timezone
+
+        changed_fields = set()
+        if self.read and self.read_at is None:
+            self.read_at = timezone.now()
+            changed_fields.add("read_at")
+        elif not self.read and self.read_at is not None:
+            self.read_at = None
+            changed_fields.add("read_at")
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and changed_fields:
+            kwargs["update_fields"] = list(set(update_fields) | changed_fields)
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
