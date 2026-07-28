@@ -5,6 +5,7 @@ let installed = false;
 let citiesPromise = null;
 const searchTimers = new WeakMap();
 const resultMaps = new WeakMap();
+const requestTokens = new WeakMap();
 
 function normalize(value) {
   return String(value || "")
@@ -38,33 +39,96 @@ function setReactInputValue(input, value) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function ensureDatalist(form, input, id) {
-  let datalist = form.querySelector(`#${id}`);
-  if (!datalist) {
-    datalist = document.createElement("datalist");
-    datalist.id = id;
-    form.appendChild(datalist);
-  }
-  input.setAttribute("list", id);
-  return datalist;
+function installStyles() {
+  if (document.getElementById("supplier-location-suggestions-style")) return;
+  const style = document.createElement("style");
+  style.id = "supplier-location-suggestions-style";
+  style.textContent = `
+    .supplier-location-field { position: relative; }
+    .supplier-location-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 10050;
+      display: none;
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border, #374151);
+      border-radius: 10px;
+      background: var(--panel, #17191d);
+      box-shadow: 0 14px 35px rgba(0, 0, 0, .42);
+      padding: 6px;
+    }
+    .supplier-location-menu.is-open { display: block; }
+    .supplier-location-option {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 10px 11px;
+      text-align: left;
+    }
+    .supplier-location-option:hover,
+    .supplier-location-option:focus-visible {
+      background: rgba(234, 179, 8, .14);
+      outline: none;
+    }
+    .supplier-location-option strong { font-size: 13px; }
+    .supplier-location-option small { opacity: .72; }
+    .supplier-location-message {
+      padding: 10px 11px;
+      font-size: 12px;
+      line-height: 1.35;
+      opacity: .76;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
-function renderOptions(datalist, values) {
-  const unique = [];
-  const seen = new Set();
-  for (const value of values) {
-    const key = normalize(value.value);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    unique.push(value);
+function ensureMenu(field, mode) {
+  field.classList.add("supplier-location-field");
+  let menu = field.querySelector(`.supplier-location-menu[data-mode="${mode}"]`);
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.className = "supplier-location-menu";
+    menu.dataset.mode = mode;
+    menu.setAttribute("role", "listbox");
+    field.appendChild(menu);
   }
+  return menu;
+}
 
-  datalist.replaceChildren(...unique.slice(0, 30).map((item) => {
-    const option = document.createElement("option");
-    option.value = item.value;
-    if (item.label) option.label = item.label;
-    return option;
-  }));
+function menuForInput(input) {
+  return input?.closest("label.field")?.querySelector(".supplier-location-menu");
+}
+
+function closeMenu(input) {
+  const menu = menuForInput(input);
+  menu?.classList.remove("is-open");
+}
+
+function closeAllMenus(form) {
+  form.querySelectorAll(".supplier-location-menu").forEach((menu) => {
+    menu.classList.remove("is-open");
+    menu.replaceChildren();
+  });
+}
+
+function showMessage(input, message) {
+  const menu = menuForInput(input);
+  if (!menu) return;
+  const item = document.createElement("div");
+  item.className = "supplier-location-message";
+  item.textContent = message;
+  menu.replaceChildren(item);
+  menu.classList.add("is-open");
 }
 
 function cityList() {
@@ -95,11 +159,6 @@ async function resolveCity(form) {
   return null;
 }
 
-function clearSuggestionLists(form) {
-  form.querySelector("#supplier-address-options")?.replaceChildren();
-  form.querySelector("#supplier-district-options")?.replaceChildren();
-}
-
 function updateSuggestionState(form, location) {
   const addressInput = fieldByLabel(form, "Endereço")?.querySelector("input");
   const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
@@ -109,41 +168,112 @@ function updateSuggestionState(form, location) {
     if (!input) continue;
     input.disabled = false;
     input.removeAttribute("aria-disabled");
+    input.removeAttribute("list");
   }
 
   if (addressInput) {
     addressInput.placeholder = hasSelectedCity
-      ? "Digite 3 letras para escolher ou escreva o endereço"
+      ? "Digite para filtrar ou escreva o endereço"
       : "Digite o endereço";
   }
   if (districtInput) {
     districtInput.placeholder = hasSelectedCity
-      ? "Digite 3 letras para escolher ou escreva o bairro"
+      ? "Digite para filtrar ou escreva o bairro"
       : "Digite o bairro";
   }
 
-  if (!hasSelectedCity) clearSuggestionLists(form);
+  if (!hasSelectedCity) closeAllMenus(form);
+}
+
+function uniqueResults(results, mode) {
+  const seen = new Set();
+  return results.filter((item) => {
+    const value = mode === "address" ? item.address : item.district;
+    const key = normalize(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderResults(form, input, mode, results) {
+  const menu = menuForInput(input);
+  if (!menu) return;
+
+  const filtered = uniqueResults(results, mode).slice(0, 20);
+  resultMaps.set(input, results);
+
+  if (!filtered.length) {
+    showMessage(
+      input,
+      mode === "address"
+        ? "Nenhum endereço foi encontrado para esse texto. Você pode continuar digitando normalmente."
+        : "Nenhum bairro foi encontrado para esse texto. Você pode continuar digitando normalmente.",
+    );
+    return;
+  }
+
+  const buttons = filtered.map((item) => {
+    const value = mode === "address" ? item.address : item.district;
+    const details = mode === "address"
+      ? [item.district, item.cep].filter(Boolean).join(" — ")
+      : [item.address, item.cep].filter(Boolean).join(" — ");
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "supplier-location-option";
+    button.setAttribute("role", "option");
+
+    const title = document.createElement("strong");
+    title.textContent = value;
+    button.appendChild(title);
+
+    if (details) {
+      const subtitle = document.createElement("small");
+      subtitle.textContent = details;
+      button.appendChild(subtitle);
+    }
+
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      setReactInputValue(input, value);
+
+      if (mode === "address") {
+        const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
+        if (item.district && districtInput && !districtInput.value.trim()) {
+          setReactInputValue(districtInput, item.district);
+        }
+      }
+
+      closeMenu(input);
+      input.focus();
+    });
+
+    return button;
+  });
+
+  menu.replaceChildren(...buttons);
+  menu.classList.add("is-open");
 }
 
 async function searchSuggestions(form, input, mode) {
   const location = await resolveCity(form);
   updateSuggestionState(form, location);
 
-  const datalist = form.querySelector(
-    mode === "address" ? "#supplier-address-options" : "#supplier-district-options",
-  );
-  if (!datalist) return;
-
   if (!location) {
-    datalist.replaceChildren();
+    closeMenu(input);
     return;
   }
 
   const query = String(input.value || "").trim();
   if (query.length < 3) {
-    datalist.replaceChildren();
+    closeMenu(input);
     return;
   }
+
+  const token = Symbol("supplier-location-request");
+  requestTokens.set(input, token);
+  showMessage(input, "Buscando sugestões...");
 
   try {
     const response = await api.get("suppliers/address-suggestions/", {
@@ -153,26 +283,21 @@ async function searchSuggestions(form, input, mode) {
         q: query,
       },
     });
-    const results = Array.isArray(response.data?.results) ? response.data.results : [];
-    resultMaps.set(input, results);
 
-    if (mode === "address") {
-      renderOptions(datalist, results
-        .filter((item) => item.address)
-        .map((item) => ({
-          value: item.address,
-          label: [item.district, item.cep].filter(Boolean).join(" — "),
-        })));
-    } else {
-      renderOptions(datalist, results
-        .filter((item) => item.district)
-        .map((item) => ({
-          value: item.district,
-          label: [item.address, item.cep].filter(Boolean).join(" — "),
-        })));
-    }
-  } catch {
-    datalist.replaceChildren();
+    if (requestTokens.get(input) !== token) return;
+    if (String(input.value || "").trim() !== query) return;
+
+    const results = Array.isArray(response.data?.results) ? response.data.results : [];
+    renderResults(form, input, mode, results);
+  } catch (error) {
+    if (requestTokens.get(input) !== token) return;
+    const status = error?.response?.status;
+    showMessage(
+      input,
+      status === 404
+        ? "A busca de sugestões ainda não está disponível no servidor. Você pode continuar digitando normalmente."
+        : "Não foi possível carregar as sugestões agora. Você pode continuar digitando normalmente.",
+    );
   }
 }
 
@@ -182,44 +307,47 @@ function scheduleSearch(form, input, mode) {
   searchTimers.set(input, timer);
 }
 
-function applySelectedAddress(form, addressInput) {
-  const results = resultMaps.get(addressInput) || [];
-  const selected = results.find(
-    (item) => normalize(item.address) === normalize(addressInput.value),
-  );
-  if (!selected) return;
-
-  const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
-  if (selected.district && districtInput && !districtInput.value.trim()) {
-    setReactInputValue(districtInput, selected.district);
-  }
-}
-
 async function handleCityChange(form) {
   const cityInput = fieldByLabel(form, "Cidade")?.querySelector("input");
   const currentCity = normalize(cityInput?.value);
 
   if (form.dataset.lastSupplierCity !== currentCity) {
     form.dataset.supplierSelectedUf = "";
-    clearSuggestionLists(form);
+    closeAllMenus(form);
   }
 
   form.dataset.lastSupplierCity = currentCity;
   const location = await resolveCity(form);
   updateSuggestionState(form, location);
+
+  if (!location) return;
+  const addressInput = fieldByLabel(form, "Endereço")?.querySelector("input");
+  const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
+  if (String(addressInput?.value || "").trim().length >= 3) {
+    scheduleSearch(form, addressInput, "address");
+  }
+  if (String(districtInput?.value || "").trim().length >= 3) {
+    scheduleSearch(form, districtInput, "district");
+  }
 }
 
 function prepareForm() {
   const form = supplierForm();
   if (!form) return;
 
+  installStyles();
+
   const cityInput = fieldByLabel(form, "Cidade")?.querySelector("input");
-  const addressInput = fieldByLabel(form, "Endereço")?.querySelector("input");
-  const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
+  const addressField = fieldByLabel(form, "Endereço");
+  const districtField = fieldByLabel(form, "Bairro");
+  const addressInput = addressField?.querySelector("input");
+  const districtInput = districtField?.querySelector("input");
   if (!cityInput || !addressInput || !districtInput) return;
 
-  ensureDatalist(form, addressInput, "supplier-address-options");
-  ensureDatalist(form, districtInput, "supplier-district-options");
+  ensureMenu(addressField, "address");
+  ensureMenu(districtField, "district");
+  addressInput.removeAttribute("list");
+  districtInput.removeAttribute("list");
 
   if (form.dataset.locationSuggestionsInstalled !== "true") {
     form.dataset.locationSuggestionsInstalled = "true";
@@ -228,8 +356,16 @@ function prepareForm() {
     cityInput.addEventListener("change", () => handleCityChange(form));
 
     addressInput.addEventListener("input", () => scheduleSearch(form, addressInput, "address"));
-    addressInput.addEventListener("change", () => applySelectedAddress(form, addressInput));
+    addressInput.addEventListener("focus", () => {
+      if (addressInput.value.trim().length >= 3) scheduleSearch(form, addressInput, "address");
+    });
+    addressInput.addEventListener("blur", () => window.setTimeout(() => closeMenu(addressInput), 160));
+
     districtInput.addEventListener("input", () => scheduleSearch(form, districtInput, "district"));
+    districtInput.addEventListener("focus", () => {
+      if (districtInput.value.trim().length >= 3) scheduleSearch(form, districtInput, "district");
+    });
+    districtInput.addEventListener("blur", () => window.setTimeout(() => closeMenu(districtInput), 160));
   }
 
   handleCityChange(form);
@@ -240,12 +376,19 @@ export function installSupplierLocationSuggestions() {
   installed = true;
 
   document.addEventListener("mousedown", (event) => {
-    const button = event.target.closest(".city-suggestions button");
-    const form = button?.closest("form");
-    if (!button || !form || !fieldByLabel(form, "Nome do fornecedor")) return;
-    const state = String(button.querySelector("strong")?.textContent || "").trim().toUpperCase();
-    if (state.length === 2) form.dataset.supplierSelectedUf = state;
-    window.setTimeout(() => handleCityChange(form), 0);
+    const cityButton = event.target.closest(".city-suggestions button");
+    const form = cityButton?.closest("form");
+    if (cityButton && form && fieldByLabel(form, "Nome do fornecedor")) {
+      const state = String(cityButton.querySelector("strong")?.textContent || "").trim().toUpperCase();
+      if (state.length === 2) form.dataset.supplierSelectedUf = state;
+      window.setTimeout(() => handleCityChange(form), 0);
+      return;
+    }
+
+    const supplier = supplierForm();
+    if (supplier && !event.target.closest(".supplier-location-menu")) {
+      supplier.querySelectorAll(".supplier-location-menu").forEach((menu) => menu.classList.remove("is-open"));
+    }
   }, true);
 
   const observer = new MutationObserver(() => {
