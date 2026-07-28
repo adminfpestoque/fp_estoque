@@ -34,6 +34,10 @@ def unique(items):
     return result
 
 
+def overpass_string(value):
+    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
 def street_candidates(address, district):
     address = " ".join(str(address or "").strip().split())
     district = " ".join(str(district or "").strip().split())
@@ -130,21 +134,32 @@ def query_viacep(state, city, street):
     return payload if isinstance(payload, list) else []
 
 
-def query_city_map(city_id):
+def query_city_map(city_id, city, state):
     city_code = re.sub(r"\D", "", str(city_id or ""))
-    if not city_code:
+    city_name = " ".join(str(city or "").strip().split())
+    state_code = re.sub(r"[^A-Z]", "", str(state or "").upper())[:2]
+    if not city_code and (not city_name or len(state_code) != 2):
         return {"streets": [], "districts": []}
 
-    cache_key = f"supplier-city-map-v2:{city_code}"
+    identity = city_code or f"{state_code}:{normalize(city_name)}"
+    cache_key = f"supplier-city-map-v3:{identity}"
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
         return cached
 
-    query = f"""
-[out:json][timeout:25];
-(
+    city_code_filters = ""
+    if city_code:
+        city_code_filters = f"""
   rel[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"IBGE:GEOCODIGO\"=\"{city_code}\"];
   rel[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"ref:IBGE\"=\"{city_code}\"];
+""".rstrip()
+
+    query = f"""
+[out:json][timeout:25];
+area[\"boundary\"=\"administrative\"][\"admin_level\"=\"4\"][\"ISO3166-2\"=\"BR-{state_code}\"]->.state_area;
+(
+{city_code_filters}
+  rel(area.state_area)[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"name\"=\"{overpass_string(city_name)}\"];
 )->.city_relation;
 .city_relation map_to_area -> .city_area;
 (
@@ -275,36 +290,35 @@ def address_suggestions(self, request):
     raw_results.extend(saved_supplier_suggestions(self, state, city, query))
 
     uses_openstreetmap = False
-    if city_id:
-        try:
-            catalog = query_city_map(city_id)
-            target = normalize(query)
-            matching_streets = [name for name in catalog["streets"] if target in normalize(name)]
-            matching_districts = [name for name in catalog["districts"] if target in normalize(name)]
+    try:
+        catalog = query_city_map(city_id, city, state)
+        target = normalize(query)
+        matching_streets = [name for name in catalog["streets"] if target in normalize(name)]
+        matching_districts = [name for name in catalog["districts"] if target in normalize(name)]
 
-            if matching_streets or matching_districts:
-                uses_openstreetmap = True
+        if matching_streets or matching_districts:
+            uses_openstreetmap = True
 
-            raw_results.extend(
-                {
-                    "logradouro": name,
-                    "bairro": "",
-                    "cep": "",
-                    "source": "openstreetmap",
-                }
-                for name in matching_streets
-            )
-            raw_results.extend(
-                {
-                    "logradouro": "",
-                    "bairro": name,
-                    "cep": "",
-                    "source": "openstreetmap",
-                }
-                for name in matching_districts
-            )
-        except (requests.RequestException, ValueError) as error:
-            errors.append(str(error))
+        raw_results.extend(
+            {
+                "logradouro": name,
+                "bairro": "",
+                "cep": "",
+                "source": "openstreetmap",
+            }
+            for name in matching_streets
+        )
+        raw_results.extend(
+            {
+                "logradouro": "",
+                "bairro": name,
+                "cep": "",
+                "source": "openstreetmap",
+            }
+            for name in matching_districts
+        )
+    except (requests.RequestException, ValueError) as error:
+        errors.append(str(error))
 
     results = compact_suggestions(raw_results)
     return Response(
