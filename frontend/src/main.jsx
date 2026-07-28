@@ -18,6 +18,7 @@ import { UsersPage } from "./pages/users.jsx";
 import { SettingsPage } from "./pages/settings.jsx";
 import { installReferenceFallbacks } from "./api-fallback.js";
 import { installCreditSaleEnhancements } from "./output-credit.js";
+import { installCreditPaymentWorkflow } from "./output-credit-workflow.js";
 import { installEntryProductColumn } from "./entry-products.js";
 import { installMaximumStockRemoval } from "./remove-maximum-stock.js";
 import { installProductCostEntryOnly } from "./product-cost-entry-only.js";
@@ -31,7 +32,7 @@ import { installSupplierLocationSuggestions } from "./supplier-location-suggesti
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.28-supplier-location-label-fix",
+  version: "2026.07.28-credit-payment-workflow",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
@@ -40,12 +41,16 @@ window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
     "supplier-form-and-table-cleanup",
     "supplier-address-and-district-suggestions",
     "entry-output-interface-refinements",
+    "credit-due-date-and-payment-status",
+    "credit-sale-pending-until-paid",
+    "output-items-by-sale-unit",
   ],
 });
 document.documentElement.dataset.fpRelease = window.__FP_ESTOQUE_RELEASE__.version;
 
 installReferenceFallbacks(api);
 installCreditSaleEnhancements(api);
+installCreditPaymentWorkflow(api);
 installEntryProductColumn(api);
 installMaximumStockRemoval(api);
 installProductCostEntryOnly(api);
