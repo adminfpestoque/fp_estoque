@@ -125,6 +125,64 @@ def query_viacep(state, city, street):
     return payload if isinstance(payload, list) else []
 
 
+def compact_suggestions(items):
+    suggestions = []
+    seen = set()
+    for item in items:
+        address = " ".join(str(item.get("logradouro") or "").strip().split())
+        district = " ".join(str(item.get("bairro") or "").strip().split())
+        cep = str(item.get("cep") or "").strip()
+        if not address and not district:
+            continue
+        key = (normalize(address), normalize(district), cep)
+        if key in seen:
+            continue
+        seen.add(key)
+        suggestions.append(
+            {
+                "address": address,
+                "district": district,
+                "cep": cep,
+                "complement": str(item.get("complemento") or "").strip(),
+            }
+        )
+        if len(suggestions) >= 30:
+            break
+    return suggestions
+
+
+@action(detail=False, methods=["get"], url_path="address-suggestions")
+def address_suggestions(self, request):
+    state = str(request.query_params.get("state") or "").strip().upper()
+    city = str(request.query_params.get("city") or "").strip()
+    query = " ".join(str(request.query_params.get("q") or "").strip().split())
+
+    if len(state) != 2 or len(city) < 3:
+        return Response(
+            {
+                "detail": "Selecione a cidade antes de pesquisar endereço ou bairro.",
+                "results": [],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if len(query) < 3:
+        return Response({"results": []})
+
+    try:
+        results = query_viacep(state, city, query)
+    except (requests.RequestException, ValueError):
+        return Response(
+            {
+                "detail": "Não foi possível consultar os endereços agora.",
+                "results": [],
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    return Response({"results": compact_suggestions(results)})
+
+
 @action(detail=False, methods=["get"], url_path="lookup-cep")
 def lookup_cep(self, request):
     state = str(request.query_params.get("state") or "").strip().upper()
@@ -190,4 +248,5 @@ def lookup_cep(self, request):
     )
 
 
+SupplierViewSet.address_suggestions = address_suggestions
 SupplierViewSet.lookup_cep = lookup_cep
