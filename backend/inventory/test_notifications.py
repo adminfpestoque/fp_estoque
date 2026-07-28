@@ -105,7 +105,9 @@ class NotificationTests(TestCase):
 
         cleared = self.client.delete("/api/notifications/clear_read/")
         self.assertEqual(cleared.status_code, 200, cleared.data)
-        self.assertFalse(Notification.objects.filter(pk=operator_notice.pk).exists())
+        self.assertEqual(cleared.data["deleted"], 0)
+        self.assertEqual(cleared.data["preserved_active"], 1)
+        self.assertTrue(Notification.objects.filter(pk=operator_notice.pk).exists())
         self.assertTrue(Notification.objects.filter(pk=admin_notice.pk).exists())
 
     def test_summary_backfills_missing_notifications_without_reopening_read_items(self):
