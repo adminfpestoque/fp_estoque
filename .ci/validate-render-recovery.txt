@@ -1,0 +1,1 @@
+Validação temporária da aplicação automática de migrations e da recuperação dos endpoints de notificações e saídas.
