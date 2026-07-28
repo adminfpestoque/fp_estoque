@@ -5,51 +5,65 @@ function normalize(value) {
     .trim()
     .toLocaleLowerCase("pt-BR")
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
 }
 
-function removeTableColumn(table, expectedLabel) {
-  const headers = [...table.querySelectorAll("thead th")];
-  const index = headers.findIndex(
-    (header) => normalize(header.textContent) === normalize(expectedLabel),
-  );
-  if (index < 0) return;
+const REMOVED_FORM_LABELS = new Set([
+  "whatsapp do responsavel",
+  "e-mail do responsavel",
+]);
 
-  headers[index].remove();
-  for (const row of table.querySelectorAll("tbody tr")) {
-    row.querySelectorAll("td")[index]?.remove();
+const REMOVED_TABLE_LABELS = new Set([
+  "whatsapp do responsavel",
+  "e-mail do responsavel",
+]);
+
+function supplierFields(form) {
+  return [...form.querySelectorAll("label.field")];
+}
+
+function isSupplierForm(form) {
+  return supplierFields(form).some((field) => {
+    const label = field.querySelector(":scope > span")?.textContent;
+    return normalize(label) === "nome do fornecedor";
+  });
+}
+
+function removeSupplierFormFields() {
+  for (const form of document.querySelectorAll("form")) {
+    if (!isSupplierForm(form)) continue;
+
+    for (const field of supplierFields(form)) {
+      const label = normalize(field.querySelector(":scope > span")?.textContent);
+      if (REMOVED_FORM_LABELS.has(label)) field.remove();
+    }
+  }
+}
+
+function removeSupplierTableColumns() {
+  for (const table of document.querySelectorAll("table")) {
+    const headers = [...table.querySelectorAll("thead th")];
+    const labels = headers.map((header) => normalize(header.textContent));
+    if (!labels.includes("fornecedor") || !labels.includes("cnpj/cpf")) continue;
+
+    const indexes = headers
+      .map((header, index) => ({ index, label: normalize(header.textContent) }))
+      .filter(({ label }) => REMOVED_TABLE_LABELS.has(label))
+      .map(({ index }) => index)
+      .sort((a, b) => b - a);
+
+    for (const index of indexes) {
+      table.querySelectorAll("tr").forEach((row) => {
+        row.children[index]?.remove();
+      });
+    }
   }
 }
 
 function cleanSupplierUi() {
-  for (const form of document.querySelectorAll("form")) {
-    const fields = [...form.querySelectorAll("label.field")];
-    const isSupplierForm = fields.some(
-      (field) => normalize(field.querySelector(":scope > span")?.textContent) === "nome do fornecedor",
-    );
-    if (!isSupplierForm) continue;
-
-    for (const field of fields) {
-      const label = normalize(field.querySelector(":scope > span")?.textContent);
-      if (!["whatsapp do responsavel", "e-mail do responsavel"].includes(label)) continue;
-
-      field.hidden = true;
-      field.setAttribute("aria-hidden", "true");
-      field.querySelectorAll("input, select, textarea, button").forEach((control) => {
-        control.disabled = true;
-      });
-    }
-  }
-
-  for (const table of document.querySelectorAll("table")) {
-    const labels = [...table.querySelectorAll("thead th")].map((header) =>
-      normalize(header.textContent),
-    );
-    if (!labels.includes("fornecedor") || !labels.includes("cnpj/cpf")) continue;
-
-    removeTableColumn(table, "WhatsApp do responsável");
-    removeTableColumn(table, "E-mail do responsável");
-  }
+  removeSupplierFormFields();
+  removeSupplierTableColumns();
 }
 
 function clearRemovedContacts(payload) {
@@ -84,8 +98,12 @@ export function installSupplierContactCleanup(client) {
   });
 
   const observer = new MutationObserver(() => {
-    window.setTimeout(cleanSupplierUi, 0);
+    window.requestAnimationFrame(cleanSupplierUi);
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
   cleanSupplierUi();
+  window.setTimeout(cleanSupplierUi, 100);
+  window.setTimeout(cleanSupplierUi, 500);
+  window.setTimeout(cleanSupplierUi, 1500);
 }
