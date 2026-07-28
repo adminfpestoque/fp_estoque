@@ -6,6 +6,7 @@ from rest_framework.response import Response
 
 from ..models import Alert, StockEntry, StockOutput
 from ..safe_hooks import safe_audit, safe_notify_users, safe_refresh_alerts
+from . import alerts as alert_views
 from . import catalog as catalog_views
 from . import documents as document_views
 from . import inventories as inventory_views
@@ -19,7 +20,9 @@ from .inventories import InventoryViewSet
 
 
 # Auditoria, alertas e notificações são efeitos auxiliares. Uma falha nesses
-# módulos não deve transformar uma entrada, saída ou inventário válido em erro 500.
+# módulos não deve transformar uma entrada, saída, inventário ou consulta em erro 500.
+alert_views.audit = safe_audit
+alert_views.refresh_alerts = safe_refresh_alerts
 document_views.audit = safe_audit
 document_views.notify_users = safe_notify_users
 document_views.refresh_alerts = safe_refresh_alerts
