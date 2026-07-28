@@ -1,0 +1,1 @@
+Validação temporária da limpeza do histórico de notificações.
