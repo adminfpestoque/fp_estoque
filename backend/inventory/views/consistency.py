@@ -98,6 +98,10 @@ def notification_destroy_preserving_active_alert(self, request, *args, **kwargs)
 NotificationViewSet.destroy = notification_destroy_preserving_active_alert
 
 
+_original_clear_read = NotificationViewSet.clear_read
+
+
+@wraps(_original_clear_read)
 def clear_read_preserving_active_alerts(self, request, *args, **kwargs):
     queryset = self.get_queryset().filter(read=True)
     deletable = queryset.filter(
