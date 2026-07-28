@@ -5,7 +5,10 @@ from rest_framework import mixins, status
 from rest_framework.response import Response
 
 from ..models import Alert, StockEntry, StockOutput
-from ..services import audit, notify_users, refresh_alerts
+from ..safe_hooks import safe_audit, safe_notify_users, safe_refresh_alerts
+from . import catalog as catalog_views
+from . import documents as document_views
+from . import inventories as inventory_views
 from .alerts import AlertViewSet, NotificationViewSet
 from .documents import (
     MovementViewSet,
@@ -13,6 +16,18 @@ from .documents import (
     StockOutputViewSet,
 )
 from .inventories import InventoryViewSet
+
+
+# Auditoria, alertas e notificações são efeitos auxiliares. Uma falha nesses
+# módulos não deve transformar uma entrada, saída ou inventário válido em erro 500.
+document_views.audit = safe_audit
+document_views.notify_users = safe_notify_users
+document_views.refresh_alerts = safe_refresh_alerts
+inventory_views.audit = safe_audit
+inventory_views.notify_users = safe_notify_users
+inventory_views.refresh_alerts = safe_refresh_alerts
+catalog_views.audit = safe_audit
+catalog_views.refresh_alerts = safe_refresh_alerts
 
 
 AlertViewSet.filterset_fields = [
@@ -123,15 +138,15 @@ NotificationViewSet.clear_read = clear_read_preserving_active_alerts
 def perform_entry_update_without_notification_noise(self, serializer):
     was_confirmed = serializer.instance.status == StockEntry.CONFIRMED
     entry = serializer.save()
-    refresh_alerts(notify=True)
-    audit(
+    safe_refresh_alerts(notify=True)
+    safe_audit(
         self.request.user,
         "UPDATE",
         entry,
         f"Entrada {entry.number} atualizada.",
     )
     if was_confirmed:
-        notify_users(
+        safe_notify_users(
             "Entrada recalculada",
             (
                 f"A entrada {entry.number} foi corrigida e o estoque foi "
@@ -146,7 +161,7 @@ StockEntryViewSet.perform_update = perform_entry_update_without_notification_noi
 
 def perform_output_create_with_credit_notice(self, serializer):
     output = serializer.save()
-    audit(
+    safe_audit(
         self.request.user,
         "CREATE",
         output,
@@ -157,8 +172,8 @@ def perform_output_create_with_credit_notice(self, serializer):
         and output.payment_method == StockOutput.PAYMENT_ON_ACCOUNT
         and output.payment_due_date
     ):
-        refresh_alerts(notify=True)
-        notify_users(
+        safe_refresh_alerts(notify=True)
+        safe_notify_users(
             "Venda a prazo pendente",
             (
                 f"A saída {output.number}, do cliente "
@@ -179,8 +194,8 @@ def perform_output_update_without_notification_noise(self, serializer):
     old_due_date = instance.payment_due_date
 
     output = serializer.save()
-    refresh_alerts(notify=True)
-    audit(
+    safe_refresh_alerts(notify=True)
+    safe_audit(
         self.request.user,
         "UPDATE",
         output,
@@ -188,7 +203,7 @@ def perform_output_update_without_notification_noise(self, serializer):
     )
 
     if was_confirmed:
-        notify_users(
+        safe_notify_users(
             "Saída recalculada",
             (
                 f"A saída {output.number} foi corrigida e o estoque foi "
@@ -204,7 +219,7 @@ def perform_output_update_without_notification_noise(self, serializer):
             or old_due_date != output.payment_due_date
         )
     ):
-        notify_users(
+        safe_notify_users(
             "Prazo de pagamento atualizado",
             (
                 f"O prazo da saída {output.number}, do cliente "
@@ -249,7 +264,7 @@ def _refresh_after_success(view_class, method_name):
     def wrapped(self, request, *args, **kwargs):
         response = original(self, request, *args, **kwargs)
         if getattr(response, "status_code", 500) < 400:
-            refresh_alerts(notify=True)
+            safe_refresh_alerts(notify=True)
         return response
 
     setattr(view_class, method_name, wrapped)
