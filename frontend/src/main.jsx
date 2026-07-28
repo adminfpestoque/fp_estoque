@@ -38,7 +38,7 @@ import {
 } from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.28-system-hardening",
+  version: "2026.07.28-render-migration-recovery",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
@@ -53,7 +53,9 @@ window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
     "credit-due-and-overdue-alerts",
     "notification-deduplication-and-navigation",
     "notification-immediate-refresh",
+    "notification-failure-backoff",
     "entry-cancellation-cost-consistency",
+    "render-startup-migrations",
   ],
 });
 document.documentElement.dataset.fpRelease = window.__FP_ESTOQUE_RELEASE__.version;
@@ -100,12 +102,14 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const notificationRequestRef = useRef(null);
+  const notificationRetryAfterRef = useRef(0);
   const notify = (message, type = "success") => setToast({ message, type });
 
   function clearSession() {
     localStorage.removeItem("fp_access");
     localStorage.removeItem("fp_refresh");
     notificationRequestRef.current = null;
+    notificationRetryAfterRef.current = 0;
     setLogged(false);
     setMe(null);
     setNotifications([]);
@@ -123,17 +127,24 @@ function App() {
     }
   }
 
-  async function loadNotifications() {
+  async function loadNotifications(force = false) {
     if (notificationRequestRef.current) return notificationRequestRef.current;
+    if (!force && Date.now() < notificationRetryAfterRef.current) return null;
 
     const request = api.get("notifications/summary/")
       .then((response) => {
+        notificationRetryAfterRef.current = 0;
         setNotifications(response.data.recent || []);
         setUnreadNotifications(response.data.unread_count || 0);
         return response.data;
       })
       .catch((error) => {
-        if (error?.response?.status === 401) clearSession();
+        if (error?.response?.status === 401) {
+          clearSession();
+        } else {
+          // Durante reinício/deploy do backend, evita dezenas de chamadas iguais.
+          notificationRetryAfterRef.current = Date.now() + 30_000;
+        }
         throw error;
       })
       .finally(() => {
@@ -165,7 +176,7 @@ function App() {
     if (notification.read) return notification;
     try {
       const response = await api.post(`notifications/${notification.id}/mark_read/`);
-      await loadNotifications();
+      await loadNotifications(true);
       return response.data;
     } catch (error) {
       notify(getError(error), "error");
@@ -181,7 +192,7 @@ function App() {
   async function markAllNotificationsRead() {
     try {
       await api.post("notifications/mark_all_read/");
-      await loadNotifications();
+      await loadNotifications(true);
     } catch (error) {
       notify(getError(error), "error");
     }
@@ -216,7 +227,7 @@ function App() {
         onLogout={clearSession}
         notifications={notifications}
         unreadNotifications={unreadNotifications}
-        onRefreshNotifications={() => loadNotifications().catch(() => {})}
+        onRefreshNotifications={() => loadNotifications(true).catch(() => {})}
         onMarkNotificationRead={markNotificationRead}
         onOpenNotification={openNotification}
         onMarkAllNotificationsRead={markAllNotificationsRead}
