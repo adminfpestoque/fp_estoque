@@ -27,16 +27,20 @@ import {
 
 const OPERATIONAL_DEFAULTS = {
   expiration_alert_days: "30",
+  credit_due_alert_days: "3",
   stock_alerts_enabled: "true",
   expiration_alerts_enabled: "true",
   inventory_divergence_alerts_enabled: "true",
+  credit_due_alerts_enabled: "true",
 };
 
 const SETTING_DESCRIPTIONS = {
   expiration_alert_days: "Quantidade de dias de antecedência para avisar sobre vencimentos.",
+  credit_due_alert_days: "Quantidade de dias de antecedência para avisar sobre pagamentos a prazo.",
   stock_alerts_enabled: "Gerar alertas para produtos sem estoque ou abaixo do mínimo.",
   expiration_alerts_enabled: "Gerar alertas para lotes vencidos ou próximos do vencimento.",
   inventory_divergence_alerts_enabled: "Gerar alertas quando a contagem do inventário divergir do sistema.",
+  credit_due_alerts_enabled: "Gerar alertas para pagamentos a prazo próximos do vencimento ou vencidos.",
 };
 
 const THEME_OPTIONS = [
@@ -144,9 +148,13 @@ export function SettingsPage({ notify, me, onMeChanged }) {
     event.preventDefault();
     setSavingOperational(true);
     try {
-      const days = Number(operational.expiration_alert_days);
-      if (!Number.isInteger(days) || days < 1 || days > 365) {
+      const expirationDays = Number(operational.expiration_alert_days);
+      if (!Number.isInteger(expirationDays) || expirationDays < 1 || expirationDays > 365) {
         throw new Error("Informe entre 1 e 365 dias para os alertas de validade.");
+      }
+      const creditDays = Number(operational.credit_due_alert_days);
+      if (!Number.isInteger(creditDays) || creditDays < 0 || creditDays > 365) {
+        throw new Error("Informe entre 0 e 365 dias para os alertas de pagamentos a prazo.");
       }
       await Promise.all(
         Object.entries(operational).map(([key, value]) =>
@@ -283,6 +291,20 @@ export function SettingsPage({ notify, me, onMeChanged }) {
                   <span>dias</span>
                 </div>
               </Field>
+              <Field label="Avisar pagamento a prazo com antecedência" hint="De 0 a 365 dias. Use 0 para avisar apenas no vencimento.">
+                <div className="input-with-suffix">
+                  <input
+                    type="number"
+                    min="0"
+                    max="365"
+                    step="1"
+                    value={operational.credit_due_alert_days}
+                    onChange={(event) => setOperational({ ...operational, credit_due_alert_days: event.target.value })}
+                    required
+                  />
+                  <span>dias</span>
+                </div>
+              </Field>
               <div className="settings-info-box">
                 <ShieldCheck size={21} />
                 <p>Ao salvar, os alertas atuais são recalculados sem criar duplicações.</p>
@@ -294,6 +316,7 @@ export function SettingsPage({ notify, me, onMeChanged }) {
                 ["stock_alerts_enabled", "Alertas de estoque", "Avisar quando um produto estiver sem estoque ou abaixo do mínimo."],
                 ["expiration_alerts_enabled", "Alertas de validade", "Avisar sobre lotes vencidos ou próximos do vencimento."],
                 ["inventory_divergence_alerts_enabled", "Alertas de inventário", "Avisar quando a contagem física divergir do sistema."],
+                ["credit_due_alerts_enabled", "Alertas de pagamentos a prazo", "Avisar sobre vendas fiadas próximas do vencimento ou vencidas."],
               ].map(([key, label, description]) => (
                 <label className="settings-switch" key={key}>
                   <input
