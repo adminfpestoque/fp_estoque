@@ -95,42 +95,51 @@ async function resolveCity(form) {
   return null;
 }
 
-function setFieldsAvailability(form, location) {
-  const addressField = fieldByLabel(form, "Endereço");
-  const districtField = fieldByLabel(form, "Bairro");
-  const addressInput = addressField?.querySelector("input");
-  const districtInput = districtField?.querySelector("input");
-  const enabled = Boolean(location?.city && location?.state);
+function clearSuggestionLists(form) {
+  form.querySelector("#supplier-address-options")?.replaceChildren();
+  form.querySelector("#supplier-district-options")?.replaceChildren();
+}
+
+function updateSuggestionState(form, location) {
+  const addressInput = fieldByLabel(form, "Endereço")?.querySelector("input");
+  const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
+  const hasSelectedCity = Boolean(location?.city && location?.state);
 
   for (const input of [addressInput, districtInput]) {
     if (!input) continue;
-    input.disabled = !enabled;
-    input.setAttribute("aria-disabled", enabled ? "false" : "true");
+    input.disabled = false;
+    input.removeAttribute("aria-disabled");
   }
 
   if (addressInput) {
-    addressInput.placeholder = enabled
+    addressInput.placeholder = hasSelectedCity
       ? "Digite 3 letras para escolher ou escreva o endereço"
-      : "Selecione a cidade primeiro";
+      : "Digite o endereço";
   }
   if (districtInput) {
-    districtInput.placeholder = enabled
+    districtInput.placeholder = hasSelectedCity
       ? "Digite 3 letras para escolher ou escreva o bairro"
-      : "Selecione a cidade primeiro";
+      : "Digite o bairro";
   }
+
+  if (!hasSelectedCity) clearSuggestionLists(form);
 }
 
 async function searchSuggestions(form, input, mode) {
   const location = await resolveCity(form);
-  setFieldsAvailability(form, location);
-  if (!location) return;
+  updateSuggestionState(form, location);
 
-  const query = String(input.value || "").trim();
   const datalist = form.querySelector(
     mode === "address" ? "#supplier-address-options" : "#supplier-district-options",
   );
   if (!datalist) return;
 
+  if (!location) {
+    datalist.replaceChildren();
+    return;
+  }
+
+  const query = String(input.value || "").trim();
   if (query.length < 3) {
     datalist.replaceChildren();
     return;
@@ -189,16 +198,15 @@ function applySelectedAddress(form, addressInput) {
 async function handleCityChange(form) {
   const cityInput = fieldByLabel(form, "Cidade")?.querySelector("input");
   const currentCity = normalize(cityInput?.value);
-  if (form.dataset.lastSupplierCity && form.dataset.lastSupplierCity !== currentCity) {
+
+  if (form.dataset.lastSupplierCity !== currentCity) {
     form.dataset.supplierSelectedUf = "";
-    const addressInput = fieldByLabel(form, "Endereço")?.querySelector("input");
-    const districtInput = fieldByLabel(form, "Bairro")?.querySelector("input");
-    setReactInputValue(addressInput, "");
-    setReactInputValue(districtInput, "");
+    clearSuggestionLists(form);
   }
+
   form.dataset.lastSupplierCity = currentCity;
   const location = await resolveCity(form);
-  setFieldsAvailability(form, location);
+  updateSuggestionState(form, location);
 }
 
 function prepareForm() {
