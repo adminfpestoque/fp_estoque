@@ -26,11 +26,12 @@ import { installProductInlineCreate } from "./product-inline-create.js";
 import { installSelectOptionCleanup } from "./select-option-cleanup.js";
 import { installSupplierTableFormat } from "./supplier-table-format.js";
 import { installSupplierContactCleanup } from "./supplier-contact-cleanup.js";
+import { installSupplierRequiredLabelBridge } from "./supplier-required-label-bridge.js";
 import { installSupplierLocationSuggestions } from "./supplier-location-suggestions.js";
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.28-supplier-address-suggestions",
+  version: "2026.07.28-supplier-location-label-fix",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
@@ -53,6 +54,7 @@ installProductInlineCreate();
 installSelectOptionCleanup();
 installSupplierTableFormat();
 installSupplierContactCleanup(api);
+installSupplierRequiredLabelBridge();
 installSupplierLocationSuggestions();
 applyPreferences(loadStoredPreferences());
 
