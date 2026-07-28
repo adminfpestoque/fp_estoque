@@ -23,6 +23,7 @@ import { PageHeader } from "../layout.jsx";
 const EMPTY_SUMMARY = {
   unread_count: 0,
   read_count: 0,
+  deletable_read_count: 0,
   total: 0,
   active_alerts: 0,
   resolved_alerts: 0,
@@ -36,6 +37,7 @@ export function NotificationsPage({ notify, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [scope, setScope] = useState("all");
+  const [source, setSource] = useState("all");
   const [level, setLevel] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -45,14 +47,13 @@ export function NotificationsPage({ notify, onChanged }) {
   async function load() {
     setLoading(true);
     try {
-      // O resumo sincroniza os alertas atuais e também cria notificações que
-      // estiverem faltando para o usuário conectado.
       const summaryResponse = await api.get("notifications/summary/");
       setSummary({ ...EMPTY_SUMMARY, ...summaryResponse.data });
 
       const params = new URLSearchParams({ page: String(page) });
       if (filter !== "all") params.set("read", String(filter === "read"));
       if (scope !== "all") params.set("alert_active", String(scope === "current"));
+      if (source !== "all") params.set("alert_group", source);
       if (level) params.set("level", level);
       if (search.trim()) params.set("search", search.trim());
 
@@ -68,7 +69,9 @@ export function NotificationsPage({ notify, onChanged }) {
     }
   }
 
-  useEffect(() => { load(); }, [filter, scope, level, page, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+  }, [filter, scope, source, level, page, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function refreshAll() {
     await load();
@@ -103,7 +106,11 @@ export function NotificationsPage({ notify, onChanged }) {
     try {
       if (pendingDelete.type === "all-read") {
         const response = await api.delete("notifications/clear_read/");
-        notify(`${response.data.deleted} notificação(ões) lida(s) excluída(s).`);
+        const preserved = Number(response.data.preserved_active || 0);
+        const suffix = preserved
+          ? ` ${preserved} aviso(s) de situações ainda ativas foram preservados.`
+          : "";
+        notify(`${response.data.deleted} notificação(ões) lida(s) excluída(s).${suffix}`);
       } else {
         await api.delete(`notifications/${pendingDelete.row.id}/`);
         notify("Notificação excluída permanentemente.");
@@ -127,8 +134,13 @@ export function NotificationsPage({ notify, onChanged }) {
             <Button variant="secondary" icon={Check} onClick={markAll} disabled={!summary.unread_count}>
               Marcar todas como lidas
             </Button>
-            <Button variant="danger" icon={Trash2} onClick={() => setPendingDelete({ type: "all-read" })} disabled={!summary.read_count}>
-              Excluir lidas
+            <Button
+              variant="danger"
+              icon={Trash2}
+              onClick={() => setPendingDelete({ type: "all-read" })}
+              disabled={!summary.deletable_read_count}
+            >
+              Excluir lidas resolvidas
             </Button>
           </>
         )}
@@ -152,14 +164,22 @@ export function NotificationsPage({ notify, onChanged }) {
           />
         </div>
         <select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
-          <option value="all">Todas</option>
+          <option value="all">Todas as leituras</option>
           <option value="unread">Não lidas</option>
           <option value="read">Lidas</option>
         </select>
         <select value={scope} onChange={(event) => { setScope(event.target.value); setPage(1); }}>
-          <option value="all">Todos os tipos</option>
+          <option value="all">Atuais, resolvidas e eventos</option>
           <option value="current">Situações atuais e eventos</option>
-          <option value="resolved">Situações resolvidas</option>
+          <option value="resolved">Somente situações resolvidas</option>
+        </select>
+        <select value={source} onChange={(event) => { setSource(event.target.value); setPage(1); }}>
+          <option value="all">Todas as origens</option>
+          <option value="credit">Contas a prazo</option>
+          <option value="stock">Estoque</option>
+          <option value="expiration">Validade</option>
+          <option value="inventory">Inventário</option>
+          <option value="system">Eventos do sistema</option>
         </select>
         <select value={level} onChange={(event) => { setLevel(event.target.value); setPage(1); }}>
           <option value="">Todos os níveis</option>
@@ -175,7 +195,7 @@ export function NotificationsPage({ notify, onChanged }) {
             title={summary.total ? "Nenhuma notificação neste filtro" : "Nenhuma notificação registrada"}
             text={summary.total
               ? "Altere os filtros para consultar outras notificações."
-              : "O sistema criará notificações para alertas de estoque, validade, inventários e operações importantes."}
+              : "O sistema criará notificações para estoque, validade, inventários, contas a prazo e operações importantes."}
           />
         ) : (
           <DataTable
@@ -211,14 +231,16 @@ export function NotificationsPage({ notify, onChanged }) {
                     <button onClick={() => mark(row, !row.read)} title={row.read ? "Marcar como não lida" : "Marcar como lida"}>
                       {row.read ? <Bell size={16} /> : <Check size={16} />}
                     </button>
-                    <button
-                      className="danger"
-                      onClick={() => setPendingDelete({ type: "single", row })}
-                      title="Excluir notificação permanentemente"
-                      aria-label={`Excluir notificação ${row.title}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {!row.alert_active && (
+                      <button
+                        className="danger"
+                        onClick={() => setPendingDelete({ type: "single", row })}
+                        title="Excluir notificação permanentemente"
+                        aria-label={`Excluir notificação ${row.title}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 ),
               },
@@ -230,12 +252,12 @@ export function NotificationsPage({ notify, onChanged }) {
 
       {pendingDelete && (
         <ConfirmModal
-          title={pendingDelete.type === "all-read" ? "Excluir notificações lidas" : "Excluir notificação"}
+          title={pendingDelete.type === "all-read" ? "Excluir notificações lidas e resolvidas" : "Excluir notificação"}
           message={pendingDelete.type === "all-read"
-            ? "Deseja realmente excluir permanentemente todas as notificações já lidas?"
+            ? "Deseja excluir permanentemente as notificações lidas que já foram resolvidas ou são eventos do sistema?"
             : `Deseja realmente excluir a notificação “${pendingDelete.row.title}”?`}
-          detail="Esta ação é permanente e não poderá ser desfeita."
-          confirmLabel={pendingDelete.type === "all-read" ? "Excluir todas as lidas" : "Excluir notificação"}
+          detail="Avisos de situações ainda ativas são preservados para não desaparecerem antes da resolução."
+          confirmLabel={pendingDelete.type === "all-read" ? "Excluir lidas resolvidas" : "Excluir notificação"}
           confirmVariant="danger"
           busy={deleting}
           onClose={() => setPendingDelete(null)}
