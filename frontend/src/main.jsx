@@ -26,16 +26,18 @@ import { installProductInlineCreate } from "./product-inline-create.js";
 import { installSelectOptionCleanup } from "./select-option-cleanup.js";
 import { installSupplierTableFormat } from "./supplier-table-format.js";
 import { installSupplierContactCleanup } from "./supplier-contact-cleanup.js";
+import { installSupplierLocationSuggestions } from "./supplier-location-suggestions.js";
 import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.27-reapplied-vercel",
+  version: "2026.07.28-supplier-address-suggestions",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
     "product-create-fields-on-demand",
     "duplicate-select-option-cleanup",
     "supplier-form-and-table-cleanup",
+    "supplier-address-and-district-suggestions",
     "entry-output-interface-refinements",
   ],
 });
@@ -51,6 +53,7 @@ installProductInlineCreate();
 installSelectOptionCleanup();
 installSupplierTableFormat();
 installSupplierContactCleanup(api);
+installSupplierLocationSuggestions();
 applyPreferences(loadStoredPreferences());
 
 function App() {
