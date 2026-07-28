@@ -12,6 +12,7 @@ from ..maximum_stock_retired import retire_product_maximum_stock
 retire_product_maximum_stock(Product)
 
 from . import product_container as _product_container  # noqa: E402,F401 — registra a embalagem simples do produto
+from . import consistency as _consistency  # noqa: E402,F401 — mantém custos, lotes e estornos consistentes
 
 __all__ = [
     "Alert", "AuditLog", "Category", "InventoryCount", "InventoryItem", "Lot",
