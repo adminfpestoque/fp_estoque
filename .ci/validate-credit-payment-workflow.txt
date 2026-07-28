@@ -1,0 +1,1 @@
+Validate frontend credit payment workflow, due-date/status columns, and sale-unit item summaries.
