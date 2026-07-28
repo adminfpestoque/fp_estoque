@@ -107,6 +107,22 @@ class Migration(migrations.Migration):
                 to="inventory.stockoutput",
             ),
         ),
+        migrations.AlterField(
+            model_name="alert",
+            name="type",
+            field=models.CharField(
+                choices=[
+                    ("LOW_STOCK", "Estoque baixo"),
+                    ("OUT_OF_STOCK", "Sem estoque"),
+                    ("EXPIRING", "Próximo do vencimento"),
+                    ("EXPIRED", "Vencido"),
+                    ("INVENTORY_DIVERGENCE", "Divergência de inventário"),
+                    ("CREDIT_DUE", "Pagamento a vencer"),
+                    ("CREDIT_OVERDUE", "Pagamento vencido"),
+                ],
+                max_length=30,
+            ),
+        ),
         migrations.RunPython(
             deduplicate_alerts_and_notifications,
             reverse_noop,
