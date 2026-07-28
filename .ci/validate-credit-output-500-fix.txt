@@ -1,0 +1,1 @@
+Validação temporária da correção do erro 500 ao salvar saída a prazo.
