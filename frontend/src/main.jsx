@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, EmptyState, getError, Logo, RefreshCw, Toast } from "./shared.jsx";
 import { Login } from "./auth.jsx";
@@ -25,14 +25,20 @@ import { installProductCostEntryOnly } from "./product-cost-entry-only.js";
 import { installProductMinimumStock } from "./product-minimum-stock.js";
 import { installProductInlineCreate } from "./product-inline-create.js";
 import { installSelectOptionCleanup } from "./select-option-cleanup.js";
+import { installNotificationSync } from "./notification-sync.js";
 import { installSupplierTableFormat } from "./supplier-table-format.js";
 import { installSupplierContactCleanup } from "./supplier-contact-cleanup.js";
 import { installSupplierRequiredLabelBridge } from "./supplier-required-label-bridge.js";
 import { installSupplierLocationSuggestions } from "./supplier-location-suggestions.js";
-import { applyAndStorePreferences, applyPreferences, loadStoredPreferences, normalizePreferences } from "./preferences.js";
+import {
+  applyAndStorePreferences,
+  applyPreferences,
+  loadStoredPreferences,
+  normalizePreferences,
+} from "./preferences.js";
 
 window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
-  version: "2026.07.28-credit-payment-workflow",
+  version: "2026.07.28-system-hardening",
   source: "main",
   features: [
     "minimum-stock-by-unit-or-package",
@@ -44,6 +50,10 @@ window.__FP_ESTOQUE_RELEASE__ = Object.freeze({
     "credit-due-date-and-payment-status",
     "credit-sale-pending-until-paid",
     "output-items-by-sale-unit",
+    "credit-due-and-overdue-alerts",
+    "notification-deduplication-and-navigation",
+    "notification-immediate-refresh",
+    "entry-cancellation-cost-consistency",
   ],
 });
 document.documentElement.dataset.fpRelease = window.__FP_ESTOQUE_RELEASE__.version;
@@ -57,11 +67,30 @@ installProductCostEntryOnly(api);
 installProductMinimumStock();
 installProductInlineCreate();
 installSelectOptionCleanup();
+installNotificationSync(api);
 installSupplierTableFormat();
 installSupplierContactCleanup(api);
 installSupplierRequiredLabelBridge();
 installSupplierLocationSuggestions();
 applyPreferences(loadStoredPreferences());
+
+function notificationDestination(notification) {
+  switch (notification?.alert_type) {
+    case "LOW_STOCK":
+    case "OUT_OF_STOCK":
+      return "products";
+    case "EXPIRING":
+    case "EXPIRED":
+      return "lots";
+    case "INVENTORY_DIVERGENCE":
+      return "inventories";
+    case "CREDIT_DUE":
+    case "CREDIT_OVERDUE":
+      return "outputs";
+    default:
+      return "notifications";
+  }
+}
 
 function App() {
   const [logged, setLogged] = useState(Boolean(localStorage.getItem("fp_access")));
@@ -70,11 +99,13 @@ function App() {
   const [toast, setToast] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const notificationRequestRef = useRef(null);
   const notify = (message, type = "success") => setToast({ message, type });
 
   function clearSession() {
     localStorage.removeItem("fp_access");
     localStorage.removeItem("fp_refresh");
+    notificationRequestRef.current = null;
     setLogged(false);
     setMe(null);
     setNotifications([]);
@@ -93,21 +124,36 @@ function App() {
   }
 
   async function loadNotifications() {
-    try {
-      const response = await api.get("notifications/summary/");
-      setNotifications(response.data.recent || []);
-      setUnreadNotifications(response.data.unread_count || 0);
-    } catch (error) {
-      if (error?.response?.status === 401) clearSession();
-    }
+    if (notificationRequestRef.current) return notificationRequestRef.current;
+
+    const request = api.get("notifications/summary/")
+      .then((response) => {
+        setNotifications(response.data.recent || []);
+        setUnreadNotifications(response.data.unread_count || 0);
+        return response.data;
+      })
+      .catch((error) => {
+        if (error?.response?.status === 401) clearSession();
+        throw error;
+      })
+      .finally(() => {
+        notificationRequestRef.current = null;
+      });
+
+    notificationRequestRef.current = request;
+    return request;
   }
 
   useEffect(() => {
     if (!logged) return undefined;
     loadMe();
-    loadNotifications();
-    const timer = window.setInterval(loadNotifications, 60_000);
-    const handleNotificationsChanged = () => loadNotifications();
+    loadNotifications().catch(() => {});
+    const timer = window.setInterval(() => {
+      loadNotifications().catch(() => {});
+    }, 60_000);
+    const handleNotificationsChanged = () => {
+      loadNotifications().catch(() => {});
+    };
     window.addEventListener("fp:notifications-changed", handleNotificationsChanged);
     return () => {
       window.clearInterval(timer);
@@ -116,13 +162,20 @@ function App() {
   }, [logged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function markNotificationRead(notification) {
-    if (notification.read) return;
+    if (notification.read) return notification;
     try {
-      await api.post(`notifications/${notification.id}/mark_read/`);
+      const response = await api.post(`notifications/${notification.id}/mark_read/`);
       await loadNotifications();
+      return response.data;
     } catch (error) {
       notify(getError(error), "error");
+      return notification;
     }
+  }
+
+  async function openNotification(notification) {
+    await markNotificationRead(notification);
+    setPage(notificationDestination(notification));
   }
 
   async function markAllNotificationsRead() {
@@ -163,8 +216,9 @@ function App() {
         onLogout={clearSession}
         notifications={notifications}
         unreadNotifications={unreadNotifications}
-        onRefreshNotifications={loadNotifications}
+        onRefreshNotifications={() => loadNotifications().catch(() => {})}
         onMarkNotificationRead={markNotificationRead}
+        onOpenNotification={openNotification}
         onMarkAllNotificationsRead={markAllNotificationsRead}
       >
         {pages[page] || <EmptyState title="Página não encontrada" text="Selecione uma opção no menu." />}
