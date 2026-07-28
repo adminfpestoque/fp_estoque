@@ -1,0 +1,1 @@
+Validação final após alinhar os testes ao histórico protegido das notificações ativas.
