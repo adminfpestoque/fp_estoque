@@ -77,7 +77,11 @@ def payment_status(self):
         None,
     }:
         return "NOT_APPLICABLE"
-    return "PAID" if self.status == self.CONFIRMED else "PENDING"
+    if self.status == self.CANCELLED:
+        return "CANCELLED"
+    if self.status == self.CONFIRMED:
+        return "PAID"
+    return "PENDING"
 
 
 @property
@@ -85,6 +89,7 @@ def payment_status_display(self):
     return {
         "PAID": "Pago",
         "PENDING": "Pendente",
+        "CANCELLED": "Cancelado",
         "NOT_APPLICABLE": "Não se aplica",
     }[self.payment_status]
 
