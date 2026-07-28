@@ -1,0 +1,1 @@
+Validação temporária da revisão final de consistência, pagamentos, sessões, alertas e notificações.
