@@ -1,0 +1,1 @@
+Segunda validação temporária após alinhar a migration dos alertas de crédito.
