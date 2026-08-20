@@ -6,11 +6,12 @@ from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.response import Response
 
-from .documents import SoftDeletedDocumentViewSet
+from .documents import SoftDeletedDocumentViewSet, StockEntryViewSet
 
 
 logger = logging.getLogger(__name__)
 _original_destroy = SoftDeletedDocumentViewSet.destroy
+_original_entry_cancel = StockEntryViewSet.cancel
 
 
 def _document_snapshot(view, pk):
@@ -21,6 +22,78 @@ def _document_snapshot(view, pk):
         .only("pk", "number", "status", "deleted_at", "deletion_reason")
         .first()
     )
+
+
+def _entry_snapshot(pk):
+    model = StockEntryViewSet.queryset.model
+    return (
+        model._default_manager.filter(pk=pk)
+        .only("pk", "number", "status", "cancelled_at", "deleted_at")
+        .first()
+    )
+
+
+def _cancelled_entry_response(entry):
+    return Response(
+        {
+            "id": entry.pk,
+            "number": entry.number,
+            "status": entry.status,
+            "display_status": "Cancelada",
+            "is_deleted": bool(entry.deleted_at),
+            "cancelled_at": entry.cancelled_at,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@wraps(_original_entry_cancel)
+def resilient_entry_cancel(self, request, *args, **kwargs):
+    """Não devolve falso 500 quando o cancelamento já foi persistido.
+
+    O endpoint normalmente serializa o documento inteiro depois do estorno. Se uma
+    relação auxiliar estiver inconsistente e essa etapa falhar, consultamos o estado
+    mínimo diretamente. Se a entrada já estiver CANCELLED, confirmamos o sucesso em
+    vez de induzir uma segunda tentativa de estorno.
+    """
+    try:
+        return _original_entry_cancel(self, request, *args, **kwargs)
+    except Exception as exc:
+        pk = kwargs.get("pk")
+        entry = None
+        try:
+            entry = _entry_snapshot(pk)
+        except Exception:
+            logger.exception(
+                "Falha ao consultar entrada após erro no cancelamento.",
+                extra={"entry_pk": pk},
+            )
+
+        if entry is not None and entry.status == "CANCELLED":
+            logger.exception(
+                "Entrada já estava cancelada após falha de etapa posterior; retornando sucesso idempotente.",
+                extra={"entry_pk": entry.pk, "entry_number": entry.number},
+            )
+            return _cancelled_entry_response(entry)
+
+        if isinstance(exc, (IntegrityError, ObjectDoesNotExist)):
+            logger.exception(
+                "Conflito de integridade ao cancelar entrada de estoque.",
+                extra={"entry_pk": pk},
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Não foi possível cancelar esta entrada porque um vínculo do estoque "
+                        "ou do histórico está inconsistente. Atualize a tela e tente novamente; "
+                        "se o problema persistir, consulte as movimentações relacionadas à entrada."
+                    ),
+                    "status_code": status.HTTP_409_CONFLICT,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        raise
 
 
 @wraps(_original_destroy)
@@ -88,4 +161,5 @@ def resilient_document_destroy(self, request, *args, **kwargs):
         raise
 
 
+StockEntryViewSet.cancel = resilient_entry_cancel
 SoftDeletedDocumentViewSet.destroy = resilient_document_destroy
