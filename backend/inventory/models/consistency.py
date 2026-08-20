@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -6,6 +7,9 @@ from django.db import transaction
 from .catalog import Lot, Product, ProductPackaging, ProductSupplier
 from .entry import StockEntry, StockEntryItem
 from .movement import Movement
+
+
+logger = logging.getLogger(__name__)
 
 
 if not getattr(Movement, "_entry_reversal_consistency_installed", False):
@@ -118,54 +122,93 @@ if not getattr(StockEntry, "_cost_reference_consistency_installed", False):
             .first()
         )
 
+    def _refresh_cost_references_after_cancel(*, affected_items, supplier_id, entry_number):
+        """Atualiza referências auxiliares sem invalidar um estorno já concluído.
+
+        O cancelamento e o estorno do estoque são a operação crítica. Preço de custo
+        da embalagem e último custo por fornecedor são referências derivadas. Uma
+        inconsistência pontual nesses vínculos não pode desfazer o cancelamento nem
+        transformar a operação em erro 500.
+        """
+        packaging_ids = {
+            item.packaging_id
+            for item in affected_items
+            if item.packaging_id
+        }
+        product_ids = {
+            item.product_id
+            for item in affected_items
+            if item.product_id
+        }
+
+        for packaging_id in packaging_ids:
+            try:
+                with transaction.atomic():
+                    packaging = ProductPackaging.objects.select_for_update().filter(
+                        pk=packaging_id
+                    ).first()
+                    if not packaging:
+                        continue
+                    latest = _latest_confirmed_item(
+                        product_id=packaging.product_id,
+                        packaging_id=packaging_id,
+                    )
+                    packaging.cost_price = (
+                        latest.purchase_price if latest else Decimal("0")
+                    )
+                    packaging.save(update_fields=["cost_price", "updated_at"])
+            except Exception:
+                logger.exception(
+                    "Falha ao recalcular custo da embalagem após cancelamento da entrada; estorno preservado.",
+                    extra={
+                        "entry_number": entry_number,
+                        "packaging_id": packaging_id,
+                    },
+                )
+
+        for product_id in product_ids:
+            try:
+                with transaction.atomic():
+                    link = ProductSupplier.objects.select_for_update().filter(
+                        product_id=product_id,
+                        supplier_id=supplier_id,
+                    ).first()
+                    if not link:
+                        continue
+                    latest = _latest_confirmed_item(
+                        product_id=product_id,
+                        supplier_id=supplier_id,
+                    )
+                    link.last_cost = latest.unit_cost if latest else Decimal("0")
+                    link.save(update_fields=["last_cost", "updated_at"])
+            except Exception:
+                logger.exception(
+                    "Falha ao recalcular último custo do fornecedor após cancelamento da entrada; estorno preservado.",
+                    extra={
+                        "entry_number": entry_number,
+                        "product_id": product_id,
+                        "supplier_id": supplier_id,
+                    },
+                )
+
     def cancel_with_reference_recalculation(self, user):
         affected_items = list(
             self.items.select_related("product", "packaging").all()
         )
         supplier_id = self.supplier_id
+        entry_number = self.number
 
-        with transaction.atomic():
-            result = _original_cancel(self, user)
+        # O método original já é transacional e contém todo o estorno crítico.
+        # Não envolvemos as referências auxiliares na mesma transação para que uma
+        # falha de cadastro secundário não reverta um cancelamento válido.
+        result = _original_cancel(self, user)
 
-            packaging_ids = {
-                item.packaging_id
-                for item in affected_items
-                if item.packaging_id
-            }
-            product_ids = {
-                item.product_id
-                for item in affected_items
-                if item.product_id
-            }
-
-            for packaging_id in packaging_ids:
-                packaging = ProductPackaging.objects.select_for_update().get(
-                    pk=packaging_id
-                )
-                latest = _latest_confirmed_item(
-                    product_id=packaging.product_id,
-                    packaging_id=packaging_id,
-                )
-                packaging.cost_price = (
-                    latest.purchase_price if latest else Decimal("0")
-                )
-                packaging.save(update_fields=["cost_price", "updated_at"])
-
-            for product_id in product_ids:
-                link = ProductSupplier.objects.filter(
-                    product_id=product_id,
-                    supplier_id=supplier_id,
-                ).first()
-                if not link:
-                    continue
-                latest = _latest_confirmed_item(
-                    product_id=product_id,
-                    supplier_id=supplier_id,
-                )
-                link.last_cost = latest.unit_cost if latest else Decimal("0")
-                link.save(update_fields=["last_cost", "updated_at"])
-
-            return result
+        _refresh_cost_references_after_cancel(
+            affected_items=affected_items,
+            supplier_id=supplier_id,
+            entry_number=entry_number,
+        )
+        return result
 
     StockEntry.cancel = cancel_with_reference_recalculation
     StockEntry._cost_reference_consistency_installed = True
