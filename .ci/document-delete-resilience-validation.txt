@@ -1,0 +1,1 @@
+Temporary marker used only to trigger CI for the document deletion resilience fix.
