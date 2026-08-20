@@ -11,6 +11,7 @@ from .misc import forgot_password, report_catalog, report_export, report_preview
 from .reporting import report_xlsx_export
 from . import consistency as _consistency  # noqa: F401 — reforça notificações, estornos e relações operacionais
 from . import base_safety as _base_safety  # noqa: F401 — protege auditoria base e relações dos alertas
+from . import document_delete_safety as _document_delete_safety  # noqa: F401 — evita falso erro 500 após exclusão lógica
 
 __all__ = [
     name
